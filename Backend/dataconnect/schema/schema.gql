@@ -1,0 +1,51 @@
+# 1. Tabella: I Saloni (Tenants)
+type Tenant @table {
+  id: UUID! @default(expr: "uuidV4()")
+  name: String!
+  planType: String! @default(value: "FREE")
+  businessCategory: String
+  onboardingCompleted: Boolean @default(value: false)
+  createdAt: Timestamp! @default(expr: "request.time")
+}
+
+# 2. Tabella: Gli Utenti / Staff (collegati a Firebase Auth)
+type User @table {
+  id: String! 
+  tenant: Tenant!
+  role: String! 
+  fullName: String!
+  phone: String
+}
+
+# 3. Tabella: I Clienti (CRM locale del salone)
+type Customer @table {
+  id: UUID! @default(expr: "uuidV4()")
+  tenant: Tenant!
+  firstName: String!
+  lastName: String!
+  phone: String!
+  email: String
+  birthday: String
+  technicalNotes: String
+}
+
+# 4. Tabella: Il Listino Servizi
+type Service @table {
+  id: UUID! @default(expr: "uuidV4()")
+  tenant: Tenant!
+  name: String!
+  durationMinutes: Int!
+  price: Float!
+}
+
+# 5. Tabella: Gli Appuntamenti (Il Motore del Gestionale)
+type Appointment @table {
+  id: UUID! @default(expr: "uuidV4()")
+  tenant: Tenant!
+  customer: Customer!
+  staff: User!
+  service: Service!
+  startTime: Timestamp!
+  endTime: Timestamp!
+  status: String! @default(value: "CONFIRMED") 
+}

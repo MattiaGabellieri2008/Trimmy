@@ -1,0 +1,5 @@
+connectorId: "gestionale"
+generate:
+  javascriptSdk:
+    outputDir: "../../web-app/src/dataconnect-generated"
+    package: "@dataconnect/generated"

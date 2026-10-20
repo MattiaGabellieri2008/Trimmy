@@ -1,0 +1,34 @@
+query GetDailyAppointments(
+  $tenantId: UUID!
+  $todayStart: Timestamp!
+  $todayEnd: Timestamp!
+) @auth(level: PUBLIC, insecureReason: "Prototyping before auth is configured") {
+  appointments(
+    where: {
+      tenantId: { eq: $tenantId }
+      startTime: { ge: $todayStart, le: $todayEnd }
+    }
+    orderBy: [{ startTime: ASC }]
+  ) {
+    id
+    startTime
+    endTime
+    status
+    customer {
+      id
+      firstName
+      lastName
+      phone
+    }
+    staff {
+      id
+      fullName
+    }
+    service {
+      id
+      name
+      durationMinutes
+      price
+    }
+  }
+}

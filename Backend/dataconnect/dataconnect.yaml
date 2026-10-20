@@ -1,0 +1,12 @@
+specVersion: "v1"
+serviceId: "gestionale-saloni-service"
+location: "europe-west8"
+schema:
+  source: "./schema"
+  datasource:
+    postgresql:
+      database: "gestionale-saloni-database"
+      cloudSql:
+        instanceId: "gestionale-saloni-instance"
+        schemaValidation: "COMPATIBLE"
+connectorDirs: ["./example"]

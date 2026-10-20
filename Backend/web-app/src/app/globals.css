@@ -1,0 +1,148 @@
+@import "tailwindcss";
+
+/* ==========================================================================
+   OTTIMIZZAZIONE MULTI-BROWSER (CHROME, SAFARI, FIREFOX, EDGE, IOS, ANDROID)
+   ========================================================================== */
+
+/* 1. Normalizzazione viewport, rendering caratteri e rendering testo */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  color-scheme: light;
+}
+
+body {
+  min-height: 100%;
+  min-height: 100dvh;
+  /* Elimina il rimbalzo rubber-banding su iOS Safari a livello root */
+  overscroll-behavior-y: none;
+}
+
+/* 2. Rimuove il flash grigio al tap su iOS Safari e Android Chrome */
+*, *::before, *::after {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* 3. Elimina il ritardo di 300ms al click su dispositivi touch */
+button, 
+a, 
+input, 
+select, 
+textarea, 
+[role="button"], 
+[tabindex="0"] {
+  touch-action: manipulation;
+}
+
+/* 4. Supporto Safari per Glassmorphism (-webkit-backdrop-filter) */
+.backdrop-blur-xs {
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+}
+
+.backdrop-blur-sm {
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+
+.backdrop-blur-md {
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+}
+
+.backdrop-blur-lg {
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+}
+
+.backdrop-blur-xl {
+  -webkit-backdrop-filter: blur(24px);
+  backdrop-filter: blur(24px);
+}
+
+/* 5. Prevenzione dell'auto-zoom fastidioso su iOS Safari nei campi input */
+/* Se un input ha font < 16px, Safari ingrandisce automaticamente la pagina su mobile */
+@media screen and (max-width: 768px) {
+  input:not([type="checkbox"]):not([type="radio"]),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
+/* 6. Normalizzazione controlli modulo (evita bevel e gradienti predefiniti iOS) */
+input,
+textarea,
+select,
+button {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+/* 7. Scroll inerziale fluido su iOS Safari */
+.overflow-y-auto,
+.overflow-x-auto,
+main {
+  -webkit-overflow-scrolling: touch;
+}
+
+/* 8. Scrollbar cross-browser (Firefox 'scrollbar-width' + WebKit Chrome/Safari) */
+.scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(161, 161, 170, 0.35) transparent;
+}
+
+.scrollbar-thin::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: rgba(161, 161, 170, 0.35);
+  border-radius: 9999px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background: rgba(113, 113, 122, 0.6);
+}
+
+/* Utility per nascondere la scrollbar su tutti i browser */
+.scrollbar-hide {
+  -ms-overflow-style: none; /* IE e vecchio Edge */
+  scrollbar-width: none; /* Firefox */
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, nuovo Edge e Opera */
+}
+
+/* 9. Utility per Safe Area Inset (iPhone Notch, Dynamic Island, Home Bar) */
+.pb-safe {
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom, 0px));
+}
+
+.pt-safe {
+  padding-top: max(0.75rem, env(safe-area-inset-top, 0px));
+}
+
+.mb-safe {
+  margin-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* 10. Dynamic Viewport Height (100dvh per Safari mobile e Chrome mobile) */
+.h-screen-dvh {
+  height: 100vh;
+  height: 100dvh;
+}
+
+.min-h-screen-dvh {
+  min-height: 100vh;
+  min-height: 100dvh;
+}

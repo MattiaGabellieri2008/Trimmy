@@ -1,0 +1,79 @@
+# Queries and mutations for managing customers
+
+query ListCustomers($tenantId: UUID!) @auth(level: PUBLIC, insecureReason: "Prototyping") {
+  customers(where: { tenantId: { eq: $tenantId } }, orderBy: [{ lastName: ASC }]) {
+    id
+    firstName
+    lastName
+    phone
+    email
+    birthday
+    technicalNotes
+  }
+}
+
+query GetCustomerDetails($customerId: UUID!) @auth(level: PUBLIC, insecureReason: "Prototyping") {
+  customer(id: $customerId) {
+    id
+    firstName
+    lastName
+    phone
+    email
+    birthday
+    technicalNotes
+    tenantId
+    pastAppointments: appointments_on_customer(orderBy: [{ startTime: DESC }]) {
+      id
+      startTime
+      endTime
+      status
+      service {
+        id
+        name
+        price
+      }
+    }
+  }
+}
+
+mutation CreateCustomer(
+  $tenantId: UUID!
+  $firstName: String!
+  $lastName: String!
+  $phone: String!
+  $email: String
+  $birthday: String
+  $technicalNotes: String
+) @auth(level: PUBLIC, insecureReason: "Prototyping") {
+  customer_insert(data: {
+    tenantId: $tenantId
+    firstName: $firstName
+    lastName: $lastName
+    phone: $phone
+    email: $email
+    birthday: $birthday
+    technicalNotes: $technicalNotes
+  })
+}
+
+mutation UpdateCustomer(
+  $id: UUID!
+  $firstName: String
+  $lastName: String
+  $phone: String
+  $email: String
+  $birthday: String
+  $technicalNotes: String
+) @auth(level: PUBLIC, insecureReason: "Prototyping") {
+  customer_update(
+    id: $id
+    data: {
+      firstName: $firstName
+      lastName: $lastName
+      phone: $phone
+      email: $email
+      birthday: $birthday
+      technicalNotes: $technicalNotes
+    }
+  )
+}

@@ -1,0 +1,96 @@
+# Appuntamenti e risorse collegate (Staff, Servizi)
+
+# 1. Query: Lista Servizi per Tenant
+query ListServices($tenantId: UUID!) @auth(level: PUBLIC, insecureReason: "Prototyping") {
+  services(where: { tenantId: { eq: $tenantId } }, orderBy: [{ name: ASC }]) {
+    id
+    name
+    durationMinutes
+    price
+  }
+}
+
+# 2. Query: Lista Staff / Utenti per Tenant
+query ListStaff($tenantId: UUID!) @auth(level: PUBLIC, insecureReason: "Prototyping") {
+  users(where: { tenantId: { eq: $tenantId } }, orderBy: [{ fullName: ASC }]) {
+    id
+    fullName
+    role
+    phone
+  }
+}
+
+# 3. Mutation: Crea Appuntamento
+mutation CreateAppointment(
+  $tenantId: UUID!
+  $customerId: UUID!
+  $staffId: String!
+  $serviceId: UUID!
+  $startTime: Timestamp!
+  $endTime: Timestamp!
+  $status: String = "CONFIRMED"
+) @auth(level: PUBLIC, insecureReason: "Prototyping") {
+  appointment_insert(data: {
+    tenantId: $tenantId
+    customerId: $customerId
+    staffId: $staffId
+    serviceId: $serviceId
+    startTime: $startTime
+    endTime: $endTime
+    status: $status
+  })
+}
+
+# 4. Mutation: Aggiorna Stato Appuntamento
+mutation UpdateAppointmentStatus(
+  $id: UUID!
+  $status: String!
+) @auth(level: PUBLIC, insecureReason: "Prototyping") {
+  appointment_update(
+    id: $id
+    data: {
+      status: $status
+    }
+  )
+}
+
+# 5. Mutation: Cancella / Elimina Appuntamento
+mutation DeleteAppointment(
+  $id: UUID!
+) @auth(level: PUBLIC, insecureReason: "Prototyping") {
+  appointment_delete(id: $id)
+}
+
+# 6. Mutation: Inserisci o Aggiorna Servizio Listino
+mutation UpsertService(
+  $id: UUID!
+  $tenantId: UUID!
+  $name: String!
+  $durationMinutes: Int!
+  $price: Float!
+) @auth(level: PUBLIC, insecureReason: "Prototyping") {
+  service_upsert(data: {
+    id: $id
+    tenantId: $tenantId
+    name: $name
+    durationMinutes: $durationMinutes
+    price: $price
+  })
+}
+
+# 7. Mutation: Inserisci o Aggiorna Collaboratore / Staff
+mutation UpsertUser(
+  $id: String!
+  $tenantId: UUID!
+  $role: String!
+  $fullName: String!
+  $phone: String
+) @auth(level: PUBLIC, insecureReason: "Prototyping") {
+  user_upsert(data: {
+    id: $id
+    tenantId: $tenantId
+    role: $role
+    fullName: $fullName
+    phone: $phone
+  })
+}

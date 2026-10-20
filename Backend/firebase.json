@@ -1,0 +1,30 @@
+{
+  "emulators": {
+    "dataconnect": {
+      "dataDir": "dataconnect/.dataconnect/pgliteData"
+    },
+    "apphosting": {
+      "startCommand": "npm --prefix web-app run dev"
+    }
+  },
+  "dataconnect": {
+    "source": "dataconnect"
+  },
+  "apphosting": {
+    "backendId": "trimmy",
+    "rootDir": "web-app",
+    "ignore": [
+      "node_modules",
+      ".git",
+      "firebase-debug.log",
+      "firebase-debug.*.log",
+      "functions"
+    ]
+  },
+  "firestore": {
+    "rules": "firestore.rules"
+  },
+  "auth": {
+    "providers": {}
+  }
+}
