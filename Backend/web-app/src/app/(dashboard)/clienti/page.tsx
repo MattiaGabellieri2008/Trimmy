@@ -13,6 +13,7 @@ import {
   GetCustomerDetailsData 
 } from "../../../dataconnect-generated";
 import { fetchSalonCustomers, saveSalonCustomer } from "@/lib/customers-store";
+import { buildWhatsAppClickToChatUrl } from "@/lib/notifications-service";
 
 export default function ClientiPage() {
   const [salonTenantId, setSalonTenantId] = useState<string>("");
@@ -219,9 +220,22 @@ export default function ClientiPage() {
                 <button className="flex-1 flex items-center justify-center gap-2 py-2 bg-zinc-900 text-white text-[13px] font-medium rounded-md hover:bg-zinc-800 transition-colors shadow-sm" onClick={(e) => e.stopPropagation()}>
                   <CalendarPlus className="w-4 h-4" /> Prenota
                 </button>
-                <button className="flex items-center justify-center p-2 text-zinc-700 bg-zinc-100 border border-zinc-200 rounded-md hover:bg-zinc-200 transition-colors" title="Invia Messaggio" onClick={(e) => e.stopPropagation()}>
-                  <MessageCircle className="w-4 h-4" />
-                </button>
+                {customer.phone ? (
+                  <a 
+                    href={buildWhatsAppClickToChatUrl(customer.phone, `Ciao ${customer.firstName}! Ti contattiamo dal salone per il tuo appuntamento.`)} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-center p-2 text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md hover:bg-emerald-100 transition-colors shadow-2xs" 
+                    title="Invia WhatsApp" 
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <MessageCircle className="w-4 h-4" />
+                  </a>
+                ) : (
+                  <button className="flex items-center justify-center p-2 text-zinc-400 bg-zinc-50 border border-zinc-200 rounded-md cursor-not-allowed" title="Nessun numero di telefono" onClick={(e) => e.stopPropagation()}>
+                    <MessageCircle className="w-4 h-4" />
+                  </button>
+                )}
               </div>
             </div>
           ))}
@@ -325,6 +339,26 @@ export default function ClientiPage() {
                   <div className="flex items-center gap-3 mt-1 text-sm text-zinc-500">
                     <span className="flex items-center gap-1"><Phone className="w-3.5 h-3.5"/> {selectedCustomer.phone}</span>
                   </div>
+                  {selectedCustomer.phone && (
+                    <div className="flex items-center gap-2 mt-2.5">
+                      <a
+                        href={buildWhatsAppClickToChatUrl(selectedCustomer.phone, `Ciao ${selectedCustomer.firstName}! Ti contattiamo dal salone per il tuo appuntamento.`)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold transition-colors shadow-2xs"
+                      >
+                        <MessageCircle className="w-3.5 h-3.5" />
+                        Invia WhatsApp
+                      </a>
+                      <a
+                        href={`tel:${selectedCustomer.phone}`}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 rounded-lg text-xs font-semibold transition-colors border border-zinc-200"
+                      >
+                        <Phone className="w-3.5 h-3.5" />
+                        Chiama
+                      </a>
+                    </div>
+                  )}
                 </div>
               </div>
 

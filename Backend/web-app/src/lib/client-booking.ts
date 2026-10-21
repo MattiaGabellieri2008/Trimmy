@@ -4,6 +4,8 @@
  */
 import { db } from "./firebase";
 import { collection, query, where, getDocs, doc, updateDoc } from "firebase/firestore";
+import { sendNotification } from "./notifications-service";
+import { parseDateSafe } from "./date-utils";
 
 export interface SalonListing {
   id: string; // Tenant ID
@@ -51,6 +53,9 @@ export interface ClientAppointmentItem {
   notes?: string;
   rating?: number;
   reviewComment?: string;
+  confirmationSent?: boolean;
+  reminderSent?: boolean;
+  reviewRequestSent?: boolean;
 }
 
 // Saloni demo partner ad alta fedeltà con geolocalizzazione
@@ -457,6 +462,29 @@ export function saveClientAppointment(userUid: string, appt: ClientAppointmentIt
     const existing = getClientAppointments(userUid);
     const updated = [appt, ...existing.filter((item) => item.id !== appt.id)];
     localStorage.setItem(`${CLIENT_APPTS_KEY}${userUid}`, JSON.stringify(updated));
+
+    // Invio notifica automatica di conferma
+    if (appt.customerPhone && !appt.confirmationSent) {
+      const d = parseDateSafe(appt.startTime);
+      const dateStr = d ? d.toLocaleDateString("it-IT", { day: "numeric", month: "long" }) : "";
+      const timeStr = d ? d.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" }) : "";
+
+      sendNotification({
+        tenantId: appt.tenantId || appt.salonId || "salone-default",
+        salonName: appt.salonName,
+        appointmentId: appt.id,
+        customerName: appt.customerName || "Cliente",
+        customerPhone: appt.customerPhone,
+        type: "CONFIRMATION",
+        templateParams: {
+          servizio: appt.serviceName,
+          operatore: appt.staffName,
+          data: dateStr,
+          ora: timeStr
+        }
+      }).catch((e) => console.warn("Nota invio notifica cliente conferma:", e));
+      appt.confirmationSent = true;
+    }
   } catch (e) {
     console.error("Errore salvataggio appuntamento cliente:", e);
   }
@@ -486,6 +514,27 @@ export function cancelClientAppointment(userUid: string, apptId: string): Client
       }
     } catch (e) {
       console.warn("Errore aggiornamento cancellazione Firestore:", e);
+    }
+
+    // Invio notifica di cancellazione
+    if (target && target.customerPhone) {
+      const d = parseDateSafe(target.startTime);
+      const dateStr = d ? d.toLocaleDateString("it-IT", { day: "numeric", month: "long" }) : "";
+      const timeStr = d ? d.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" }) : "";
+
+      sendNotification({
+        tenantId: target.tenantId || target.salonId || "salone-default",
+        salonName: target.salonName,
+        appointmentId: target.id,
+        customerName: target.customerName || "Cliente",
+        customerPhone: target.customerPhone,
+        type: "CANCELLATION",
+        templateParams: {
+          servizio: target.serviceName,
+          data: dateStr,
+          ora: timeStr
+        }
+      }).catch((e) => console.warn("Nota invio notifica cancellazione:", e));
     }
 
     window.dispatchEvent(new CustomEvent("trimmy-data-updated"));

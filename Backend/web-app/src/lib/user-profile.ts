@@ -2,6 +2,8 @@ import { db } from "./firebase";
 import { doc, getDoc, setDoc, updateDoc, deleteDoc, onSnapshot } from "firebase/firestore";
 import { getSalonTenantId } from "./tenant-helper";
 
+import { NotificationSettings } from "./notifications-types";
+
 export type UserRole = "cliente" | "salone";
 export type PlanType = "FREE" | "MEDIUM" | "PRO";
 export type PlanStatus = "ACTIVE" | "PAYMENT_REQUIRED";
@@ -29,6 +31,11 @@ export interface UserProfile {
   lat?: number;
   lng?: number;
   openingHours?: string;
+
+  // Impostazioni Notifiche SMS / WhatsApp & Crediti
+  notificationSettings?: NotificationSettings;
+  smsCreditsUsed?: number;
+  smsCreditsLimit?: number;
 
   // Dati Cliente (Area Personale)
   phoneNumber?: string;

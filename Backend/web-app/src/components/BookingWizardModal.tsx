@@ -14,7 +14,8 @@ import {
   ChevronRight, 
   ArrowLeft,
   Sparkles,
-  ShieldCheck
+  ShieldCheck,
+  MessageSquare
 } from "lucide-react";
 import { 
   SalonListing, 
@@ -622,11 +623,19 @@ export default function BookingWizardModal({
                 </div>
               </div>
 
-              <div className="p-3.5 bg-emerald-50 border border-emerald-200/80 rounded-xl text-xs text-emerald-800 flex items-center gap-2.5">
-                <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
-                <span>
-                  <strong>Conferma Immediata Cloud:</strong> L&apos;appuntamento viene sincronizzato in tempo reale con il gestionale del salone. Nessun pagamento anticipato richiesto.
-                </span>
+              <div className="space-y-2">
+                <div className="p-3.5 bg-emerald-50 border border-emerald-200/80 rounded-xl text-xs text-emerald-800 flex items-center gap-2.5">
+                  <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>
+                    <strong>Conferma Immediata Cloud:</strong> L&apos;appuntamento viene sincronizzato in tempo reale con il gestionale del salone. Nessun pagamento anticipato richiesto.
+                  </span>
+                </div>
+                <div className="p-3 bg-indigo-50/70 border border-indigo-200/70 rounded-xl text-xs text-indigo-900 flex items-center gap-2.5">
+                  <MessageSquare className="w-4 h-4 text-indigo-600 shrink-0" />
+                  <span>
+                    <strong>Avviso Automatico:</strong> Riceverai la conferma e un promemoria via WhatsApp / SMS prima dell&apos;appuntamento.
+                  </span>
+                </div>
               </div>
             </div>
           )}
@@ -649,6 +658,10 @@ export default function BookingWizardModal({
                   Ti aspettiamo presso <strong>{salon.name}</strong> il giorno{" "}
                   <strong className="text-zinc-900 capitalize">{formattedDayStr}</strong> alle ore <strong className="text-zinc-900">{selectedTimeSlot}</strong>.
                 </p>
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-indigo-50 text-indigo-700 border border-indigo-200/70 rounded-full text-xs font-medium">
+                  <MessageSquare className="w-3.5 h-3.5 text-indigo-600" />
+                  Avviso di conferma inviato al {customerPhone || "tuo numero"}
+                </div>
               </div>
 
               {/* Bottoni Calendario */}

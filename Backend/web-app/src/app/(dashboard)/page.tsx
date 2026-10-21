@@ -28,6 +28,7 @@ import {
 import { getUserProfile, fetchUserProfile } from "@/lib/user-profile";
 import { addSalonNotification } from "@/lib/salon-notifications";
 import { parseDateSafe } from "@/lib/date-utils";
+import { buildWhatsAppClickToChatUrl } from "@/lib/notifications-service";
 import { 
   Plus, 
   X, 
@@ -45,7 +46,9 @@ import {
   Check, 
   CalendarDays,
   CalendarRange,
-  AlertCircle
+  AlertCircle,
+  MessageSquare,
+  Phone
 } from "lucide-react";
 
 const TIME_SLOTS = [
@@ -1179,6 +1182,40 @@ export default function AgendaPage() {
                   </p>
                 </div>
               </div>
+
+              {/* Contatto Rapido WhatsApp & Telefono */}
+              {selectedAppt.customer?.phone && (
+                <div className="p-3 bg-zinc-50 border border-zinc-200/80 rounded-xl space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-semibold text-zinc-700 uppercase tracking-wider flex items-center gap-1.5">
+                      <MessageSquare className="w-3.5 h-3.5 text-emerald-600" />
+                      Promemoria / Contatto
+                    </span>
+                    <span className="text-[11px] text-zinc-500 font-mono">{selectedAppt.customer.phone}</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <a
+                      href={buildWhatsAppClickToChatUrl(
+                        selectedAppt.customer.phone,
+                        `Ciao ${selectedAppt.customer.firstName}! Ti ricordiamo il tuo appuntamento per ${selectedAppt.service.name} il ${new Date(selectedAppt.startTime).toLocaleDateString("it-IT", { day: "numeric", month: "long" })} alle ore ${new Date(selectedAppt.startTime).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}.`
+                      )}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex-1 py-1.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shadow-2xs"
+                    >
+                      <MessageSquare className="w-3.5 h-3.5" />
+                      Invia WhatsApp 💬
+                    </a>
+                    <a
+                      href={`tel:${selectedAppt.customer.phone}`}
+                      className="py-1.5 px-3 bg-white border border-zinc-200 text-zinc-700 hover:bg-zinc-100 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
+                    >
+                      <Phone className="w-3.5 h-3.5" />
+                      Chiama
+                    </a>
+                  </div>
+                </div>
+              )}
 
               {/* Cambia Stato Appuntamento */}
               <div>

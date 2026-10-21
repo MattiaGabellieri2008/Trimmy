@@ -2,7 +2,7 @@
 
 import { useState, useEffect, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { Settings, Shield, CreditCard, Building, User, Mail, Lock, Plus, Check, X, Loader2, LogOut, Trash2, AlertTriangle, Users, Copy, RotateCw } from "lucide-react";
+import { Settings, Shield, CreditCard, Building, User, Mail, Lock, Plus, Check, X, Loader2, LogOut, Trash2, AlertTriangle, Users, Copy, RotateCw, MessageSquare, Smartphone, Send, Clock, Star, BellRing, Sparkles } from "lucide-react";
 import { auth } from "@/lib/firebase";
 import { onAuthStateChanged, updateProfile, signOut, deleteUser, User as FirebaseUser } from "firebase/auth";
 import { getUserProfile, fetchUserProfile, subscribeUserProfile, updateUserProfile, deleteUserProfile, UserProfile, PlanType } from "@/lib/user-profile";
@@ -16,8 +16,22 @@ import {
   StaffMemberItem,
   PLAN_STAFF_LIMITS 
 } from "@/lib/staff-store";
+import { 
+  NotificationSettings, 
+  NotificationLogItem, 
+  DEFAULT_NOTIFICATION_SETTINGS, 
+  PLAN_NOTIFICATION_CREDITS,
+  DEFAULT_NOTIFICATION_TEMPLATES
+} from "@/lib/notifications-types";
+import { 
+  getSalonNotificationSettings, 
+  saveSalonNotificationSettings, 
+  fetchNotificationLogs, 
+  sendNotification, 
+  buildWhatsAppClickToChatUrl 
+} from "@/lib/notifications-service";
 
-type TabType = "profilo" | "salone" | "team" | "abbonamento";
+type TabType = "profilo" | "salone" | "team" | "notifiche" | "abbonamento";
 
 function ImpostazioniContent() {
   const searchParams = useSearchParams();
@@ -63,6 +77,88 @@ function ImpostazioniContent() {
   const [deleteError, setDeleteError] = useState("");
   const [isUpgrading, setIsUpgrading] = useState(false);
 
+  // Notifiche SMS & WhatsApp State
+  const [notifSettings, setNotifSettings] = useState<NotificationSettings>(DEFAULT_NOTIFICATION_SETTINGS);
+  const [notifLogs, setNotifLogs] = useState<NotificationLogItem[]>([]);
+  const [isLoadingNotifs, setIsLoadingNotifs] = useState(false);
+  const [savingNotifSettings, setSavingNotifSettings] = useState(false);
+  const [notifSaveMsg, setNotifSaveMsg] = useState("");
+  const [selectedTemplateTab, setSelectedTemplateTab] = useState<"confirmation" | "reminder" | "cancellation" | "reviewRequest">("confirmation");
+  const [testPhoneNumber, setTestPhoneNumber] = useState("");
+  const [testChannel, setTestChannel] = useState<"WHATSAPP" | "SMS">("WHATSAPP");
+  const [isSendingTest, setIsSendingTest] = useState(false);
+  const [testResultMsg, setTestResultMsg] = useState<{ success: boolean; text: string } | null>(null);
+
+  const loadNotificationData = async (tid: string) => {
+    setIsLoadingNotifs(true);
+    try {
+      const [settings, logs] = await Promise.all([
+        getSalonNotificationSettings(tid),
+        fetchNotificationLogs(tid)
+      ]);
+      setNotifSettings(settings);
+      setNotifLogs(logs);
+    } catch (e) {
+      console.warn("Nota caricamento impostazioni notifiche:", e);
+    } finally {
+      setIsLoadingNotifs(false);
+    }
+  };
+
+  const handleSaveNotifSettings = async () => {
+    if (!currentUser) return;
+    setSavingNotifSettings(true);
+    setNotifSaveMsg("");
+    try {
+      const tid = getSalonTenantId(currentUser.uid);
+      await saveSalonNotificationSettings(tid, notifSettings);
+      setNotifSaveMsg("Impostazioni notifiche salvate con successo!");
+      setTimeout(() => setNotifSaveMsg(""), 3500);
+    } catch (e: any) {
+      setNotifSaveMsg("Errore durante il salvataggio.");
+    } finally {
+      setSavingNotifSettings(false);
+    }
+  };
+
+  const handleSendTestNotification = async () => {
+    if (!currentUser) return;
+    if (!testPhoneNumber.trim()) {
+      setTestResultMsg({ success: false, text: "Inserisci un numero di cellulare per il test." });
+      return;
+    }
+    setIsSendingTest(true);
+    setTestResultMsg(null);
+    try {
+      const tid = getSalonTenantId(currentUser.uid);
+      const sName = userProfile?.salonName || salonName || "Trimmy Salone";
+      const res = await sendNotification({
+        tenantId: tid,
+        salonName: sName,
+        customerName: "Test Trimmy",
+        customerPhone: testPhoneNumber,
+        type: "TEST",
+        channel: testChannel
+      });
+      if (res.success) {
+        setTestResultMsg({
+          success: true,
+          text: res.simulated
+            ? `Notifica di prova simulata con successo per ${testPhoneNumber}! (Registrata nel log sottostante)`
+            : `Messaggio ${testChannel} inviato con successo al numero ${testPhoneNumber}!`
+        });
+        const updatedLogs = await fetchNotificationLogs(tid);
+        setNotifLogs(updatedLogs);
+      } else {
+        setTestResultMsg({ success: false, text: res.error || "Impossibile inviare il messaggio di test." });
+      }
+    } catch (err: any) {
+      setTestResultMsg({ success: false, text: err.message || "Errore durante l'invio del test." });
+    } finally {
+      setIsSendingTest(false);
+    }
+  };
+
   const handleDirectUpgrade = async (targetPlan: "MEDIUM" | "PRO") => {
     if (!currentUser) return;
     setIsUpgrading(true);
@@ -98,7 +194,7 @@ function ImpostazioniContent() {
   // Leggi il parametro 'tab' dall'URL al montaggio
   useEffect(() => {
     const tab = searchParams.get("tab") as TabType;
-    if (tab && ["profilo", "salone", "team", "abbonamento"].includes(tab)) {
+    if (tab && ["profilo", "salone", "team", "notifiche", "abbonamento"].includes(tab)) {
       setActiveTab(tab);
     }
   }, [searchParams]);
@@ -136,6 +232,9 @@ function ImpostazioniContent() {
           displayName: user.displayName || "Titolare",
           email: user.email || ""
         }).then(setStaffList).catch(console.error);
+
+        // Carica impostazioni e log notifiche SMS/WhatsApp
+        loadNotificationData(tid).catch(console.error);
 
         // Determina il provider di autenticazione
         const providers = user.providerData.map(p => p.providerId);
@@ -407,6 +506,16 @@ function ImpostazioniContent() {
             >
               <Shield className="w-4 h-4" />
               Gestione Team
+            </button>
+            <button
+              onClick={() => {
+                setActiveTab("notifiche");
+                if (currentUser) loadNotificationData(getSalonTenantId(currentUser.uid));
+              }}
+              className={`flex items-center gap-2 sm:gap-3 px-3.5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors text-left shrink-0 whitespace-nowrap ${activeTab === "notifiche" ? "bg-zinc-100 text-zinc-900 font-semibold" : "text-zinc-500 hover:text-zinc-900 hover:bg-zinc-50"}`}
+            >
+              <MessageSquare className="w-4 h-4 text-emerald-600" />
+              Notifiche & SMS
             </button>
             <button
               onClick={() => setActiveTab("abbonamento")}
@@ -796,6 +905,472 @@ function ImpostazioniContent() {
                   </>
                 );
               })()}
+            </div>
+          )}
+
+
+          {/* TAB: NOTIFICHE & SMS */}
+          {activeTab === "notifiche" && (
+            <div className="space-y-6 animate-in fade-in duration-300">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <h3 className="text-lg font-semibold text-zinc-900 flex items-center gap-2">
+                    <MessageSquare className="w-5 h-5 text-emerald-600" />
+                    Notifiche SMS & WhatsApp
+                  </h3>
+                  <p className="text-sm text-zinc-500">
+                    Invia promemoria automatici, conferme istantanee e richieste recensioni ai tuoi clienti.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleSaveNotifSettings}
+                  disabled={savingNotifSettings}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-zinc-900 hover:bg-zinc-800 rounded-xl transition-colors shadow-xs cursor-pointer self-start sm:self-auto disabled:opacity-50"
+                >
+                  {savingNotifSettings ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Check className="w-3.5 h-3.5" />
+                  )}
+                  Salva Modifiche
+                </button>
+              </div>
+
+              {notifSaveMsg && (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-xl text-xs font-medium flex items-center gap-2">
+                  <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>{notifSaveMsg}</span>
+                </div>
+              )}
+
+              {/* Box Riepilogo Crediti Mensili & Piano */}
+              {(() => {
+                const planType = userProfile?.planType || (userProfile?.staffCount && userProfile.staffCount > 3 ? "PRO" : userProfile?.staffCount && userProfile.staffCount > 1 ? "MEDIUM" : "FREE");
+                const planCredits = PLAN_NOTIFICATION_CREDITS[planType] || 0;
+                const usedCredits = notifLogs.filter(l => l.status === "SENT" || l.status === "SIMULATED").length;
+                const percentUsed = planCredits > 0 ? Math.min(100, Math.round((usedCredits / planCredits) * 100)) : (usedCredits > 0 ? 100 : 0);
+
+                return (
+                  <div className="bg-zinc-50/80 border border-zinc-200/80 rounded-2xl p-5 space-y-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div>
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider bg-zinc-200 text-zinc-800 mb-1.5">
+                          Piano {planType === "FREE" ? "Starter" : planType} • Quota Notifiche
+                        </span>
+                        <h4 className="text-xl font-bold text-zinc-900">
+                          {planType === "FREE" ? (
+                            <span>0 Crediti Automatici <span className="text-xs font-normal text-zinc-500">(WhatsApp 1-click illimitato gratuito)</span></span>
+                          ) : (
+                            <span>{usedCredits} / {planCredits} <span className="text-sm font-normal text-zinc-500">messaggi inviati questo mese</span></span>
+                          )}
+                        </h4>
+                      </div>
+                      {planType === "FREE" ? (
+                        <button
+                          type="button"
+                          onClick={() => setActiveTab("abbonamento")}
+                          className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold transition-colors shadow-xs cursor-pointer flex items-center gap-1.5 self-start sm:self-auto"
+                        >
+                          <Sparkles className="w-3.5 h-3.5" />
+                          Passa a Medium (50 SMS/m) o Pro
+                        </button>
+                      ) : (
+                        <div className="text-right">
+                          <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                            Invio Automatico Attivo
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
+                    {planType !== "FREE" && (
+                      <div className="space-y-1.5">
+                        <div className="w-full bg-zinc-200 rounded-full h-2 overflow-hidden">
+                          <div
+                            className={`h-full transition-all duration-500 ${percentUsed > 85 ? "bg-rose-500" : percentUsed > 60 ? "bg-amber-500" : "bg-emerald-500"}`}
+                            style={{ width: `${percentUsed}%` }}
+                          />
+                        </div>
+                        <div className="flex justify-between text-[11px] text-zinc-400">
+                          <span>{percentUsed}% consumato</span>
+                          <span>{Math.max(0, planCredits - usedCredits)} messaggi rimanenti</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* Canali di Invio Abilitati */}
+              <div>
+                <h4 className="text-xs font-semibold text-zinc-700 uppercase tracking-wider mb-3">
+                  Canali di Comunicazione
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* WhatsApp */}
+                  <div className={`p-4 rounded-xl border transition-all ${notifSettings.enabledChannels.whatsapp ? "bg-emerald-50/40 border-emerald-300" : "bg-zinc-50 border-zinc-200"}`}>
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-9 h-9 rounded-lg bg-emerald-600 text-white flex items-center justify-center font-bold text-sm shadow-xs">
+                          WA
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold text-zinc-900">WhatsApp Business</p>
+                          <p className="text-xs text-zinc-500">Tasso di apertura ~98% con link cliccabili</p>
+                        </div>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={notifSettings.enabledChannels.whatsapp}
+                          onChange={(e) => setNotifSettings({
+                            ...notifSettings,
+                            enabledChannels: { ...notifSettings.enabledChannels, whatsapp: e.target.checked }
+                          })}
+                          className="sr-only peer"
+                        />
+                        <div className="w-9 h-5 bg-zinc-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-600"></div>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* SMS */}
+                  <div className={`p-4 rounded-xl border transition-all ${notifSettings.enabledChannels.sms ? "bg-blue-50/40 border-blue-300" : "bg-zinc-50 border-zinc-200"}`}>
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-9 h-9 rounded-lg bg-blue-600 text-white flex items-center justify-center font-bold text-sm shadow-xs">
+                          SMS
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold text-zinc-900">SMS Tradizionale</p>
+                          <p className="text-xs text-zinc-500">Consegna garantita anche senza connessione dati</p>
+                        </div>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={notifSettings.enabledChannels.sms}
+                          onChange={(e) => setNotifSettings({
+                            ...notifSettings,
+                            enabledChannels: { ...notifSettings.enabledChannels, sms: e.target.checked }
+                          })}
+                          className="sr-only peer"
+                        />
+                        <div className="w-9 h-5 bg-zinc-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Eventi & Automazioni */}
+              <div>
+                <h4 className="text-xs font-semibold text-zinc-700 uppercase tracking-wider mb-3">
+                  Automazioni & Eventi
+                </h4>
+                <div className="divide-y divide-zinc-200/60 border border-zinc-200/60 rounded-xl overflow-hidden bg-white">
+                  {/* Conferma Prenotazione */}
+                  <div className="p-4 flex items-center justify-between gap-4 hover:bg-zinc-50/50 transition-colors">
+                    <div className="space-y-0.5">
+                      <p className="text-sm font-semibold text-zinc-900 flex items-center gap-2">
+                        <Check className="w-4 h-4 text-emerald-600" />
+                        Conferma Immediata Prenotazione
+                      </p>
+                      <p className="text-xs text-zinc-500">
+                        Invia notifica al cliente subito dopo la registrazione dell&apos;appuntamento (online o da agenda).
+                      </p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                      <input
+                        type="checkbox"
+                        checked={notifSettings.sendConfirmation}
+                        onChange={(e) => setNotifSettings({ ...notifSettings, sendConfirmation: e.target.checked })}
+                        className="sr-only peer"
+                      />
+                      <div className="w-9 h-5 bg-zinc-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-zinc-900"></div>
+                    </label>
+                  </div>
+
+                  {/* Promemoria 24h prima */}
+                  <div className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-zinc-50/50 transition-colors">
+                    <div className="space-y-0.5">
+                      <p className="text-sm font-semibold text-zinc-900 flex items-center gap-2">
+                        <Clock className="w-4 h-4 text-amber-600" />
+                        Promemoria Automatico Appuntamento
+                      </p>
+                      <p className="text-xs text-zinc-500">
+                        Ricorda l&apos;appuntamento per azzerare i no-show dei clienti.
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-3 self-end sm:self-auto">
+                      <select
+                        value={notifSettings.reminderHoursBefore}
+                        onChange={(e) => setNotifSettings({ ...notifSettings, reminderHoursBefore: Number(e.target.value) })}
+                        className="text-xs font-medium border border-zinc-200 rounded-lg px-2.5 py-1.5 bg-white text-zinc-700 outline-none"
+                      >
+                        <option value={12}>12 ore prima</option>
+                        <option value={24}>24 ore prima (Consigliato)</option>
+                        <option value={48}>48 ore prima</option>
+                      </select>
+                      <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                        <input
+                          type="checkbox"
+                          checked={notifSettings.sendReminder}
+                          onChange={(e) => setNotifSettings({ ...notifSettings, sendReminder: e.target.checked })}
+                          className="sr-only peer"
+                        />
+                        <div className="w-9 h-5 bg-zinc-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-zinc-900"></div>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Avviso di Cancellazione */}
+                  <div className="p-4 flex items-center justify-between gap-4 hover:bg-zinc-50/50 transition-colors">
+                    <div className="space-y-0.5">
+                      <p className="text-sm font-semibold text-zinc-900 flex items-center gap-2">
+                        <X className="w-4 h-4 text-rose-600" />
+                        Avviso di Cancellazione / Riprogrammazione
+                      </p>
+                      <p className="text-xs text-zinc-500">
+                        Notifica il cliente con link diretto per riprenotare se un appuntamento viene disdetto.
+                      </p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                      <input
+                        type="checkbox"
+                        checked={notifSettings.sendCancellation}
+                        onChange={(e) => setNotifSettings({ ...notifSettings, sendCancellation: e.target.checked })}
+                        className="sr-only peer"
+                      />
+                      <div className="w-9 h-5 bg-zinc-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-zinc-900"></div>
+                    </label>
+                  </div>
+
+                  {/* Richiesta Recensione a 5 Stelle */}
+                  <div className="p-4 flex items-center justify-between gap-4 hover:bg-zinc-50/50 transition-colors">
+                    <div className="space-y-0.5">
+                      <p className="text-sm font-semibold text-zinc-900 flex items-center gap-2">
+                        <Star className="w-4 h-4 text-amber-500 fill-amber-500" />
+                        Richiesta Recensione 5 Stelle
+                      </p>
+                      <p className="text-xs text-zinc-500">
+                        Invia un messaggio di ringraziamento e invito a recensire al termine del servizio completato.
+                      </p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                      <input
+                        type="checkbox"
+                        checked={notifSettings.sendReviewRequest}
+                        onChange={(e) => setNotifSettings({ ...notifSettings, sendReviewRequest: e.target.checked })}
+                        className="sr-only peer"
+                      />
+                      <div className="w-9 h-5 bg-zinc-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-zinc-900"></div>
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              {/* Personalizzazione Template Messaggi */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-semibold text-zinc-700 uppercase tracking-wider">
+                    Template & Testo Messaggi
+                  </h4>
+                  <span className="text-[11px] text-zinc-400">Variabili: {"{cliente}, {salone}, {servizio}, {operatore}, {data}, {ora}, {link}"}</span>
+                </div>
+
+                <div className="flex gap-2 border-b border-zinc-200/80 pb-2 overflow-x-auto text-xs font-medium">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedTemplateTab("confirmation")}
+                    className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer whitespace-nowrap ${selectedTemplateTab === "confirmation" ? "bg-zinc-900 text-white font-semibold" : "text-zinc-600 hover:bg-zinc-100"}`}
+                  >
+                    Conferma
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedTemplateTab("reminder")}
+                    className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer whitespace-nowrap ${selectedTemplateTab === "reminder" ? "bg-zinc-900 text-white font-semibold" : "text-zinc-600 hover:bg-zinc-100"}`}
+                  >
+                    Promemoria
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedTemplateTab("cancellation")}
+                    className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer whitespace-nowrap ${selectedTemplateTab === "cancellation" ? "bg-zinc-900 text-white font-semibold" : "text-zinc-600 hover:bg-zinc-100"}`}
+                  >
+                    Cancellazione
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedTemplateTab("reviewRequest")}
+                    className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer whitespace-nowrap ${selectedTemplateTab === "reviewRequest" ? "bg-zinc-900 text-white font-semibold" : "text-zinc-600 hover:bg-zinc-100"}`}
+                  >
+                    Recensione
+                  </button>
+                </div>
+
+                <div>
+                  <textarea
+                    rows={3}
+                    value={notifSettings.customTemplates[selectedTemplateTab] || DEFAULT_NOTIFICATION_TEMPLATES[selectedTemplateTab === "confirmation" ? "CONFIRMATION" : selectedTemplateTab === "reminder" ? "REMINDER" : selectedTemplateTab === "cancellation" ? "CANCELLATION" : "REVIEW_REQUEST"]}
+                    onChange={(e) => {
+                      setNotifSettings({
+                        ...notifSettings,
+                        customTemplates: {
+                          ...notifSettings.customTemplates,
+                          [selectedTemplateTab]: e.target.value
+                        }
+                      });
+                    }}
+                    className="w-full p-3 bg-zinc-50 border border-zinc-200 rounded-xl text-xs sm:text-sm text-zinc-800 font-mono focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:bg-white resize-none"
+                  />
+                  <div className="flex justify-between items-center mt-1 text-[11px] text-zinc-400">
+                    <span>Salva per rendere effettive le modifiche su tutte le nuove notifiche.</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const defaultVal = DEFAULT_NOTIFICATION_TEMPLATES[selectedTemplateTab === "confirmation" ? "CONFIRMATION" : selectedTemplateTab === "reminder" ? "REMINDER" : selectedTemplateTab === "cancellation" ? "CANCELLATION" : "REVIEW_REQUEST"];
+                        setNotifSettings({
+                          ...notifSettings,
+                          customTemplates: {
+                            ...notifSettings.customTemplates,
+                            [selectedTemplateTab]: defaultVal
+                          }
+                        });
+                      }}
+                      className="text-zinc-500 hover:text-zinc-800 underline cursor-pointer"
+                    >
+                      Ripristina predefinito
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Box di Prova / Test Notifica */}
+              <div className="p-4 bg-zinc-50 border border-zinc-200/80 rounded-2xl space-y-3">
+                <div className="flex items-center gap-2">
+                  <Smartphone className="w-4 h-4 text-zinc-700" />
+                  <h4 className="text-xs font-semibold text-zinc-900 uppercase tracking-wider">
+                    Invia un Messaggio di Prova
+                  </h4>
+                </div>
+                <p className="text-xs text-zinc-500">
+                  Verifica subito la ricezione del messaggio inviandolo al tuo numero di cellulare.
+                </p>
+
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+                  <input
+                    type="tel"
+                    value={testPhoneNumber}
+                    onChange={(e) => setTestPhoneNumber(e.target.value)}
+                    placeholder="+39 333 1234567"
+                    className="flex-1 px-3 py-2 bg-white border border-zinc-200 rounded-xl text-xs sm:text-sm text-zinc-900 outline-none focus:ring-2 focus:ring-zinc-900"
+                  />
+                  <select
+                    value={testChannel}
+                    onChange={(e) => setTestChannel(e.target.value as any)}
+                    className="px-3 py-2 bg-white border border-zinc-200 rounded-xl text-xs sm:text-sm font-medium text-zinc-700 outline-none"
+                  >
+                    <option value="WHATSAPP">WhatsApp</option>
+                    <option value="SMS">SMS</option>
+                  </select>
+                  <button
+                    type="button"
+                    disabled={isSendingTest}
+                    onClick={handleSendTestNotification}
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold transition-colors flex items-center justify-center gap-1.5 shadow-xs disabled:opacity-50 cursor-pointer"
+                  >
+                    {isSendingTest ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                    Invia Prova
+                  </button>
+                </div>
+
+                {testResultMsg && (
+                  <div className={`p-2.5 rounded-lg text-xs font-medium ${testResultMsg.success ? "bg-emerald-100/70 text-emerald-800 border border-emerald-200" : "bg-rose-100/70 text-rose-800 border border-rose-200"}`}>
+                    {testResultMsg.text}
+                  </div>
+                )}
+              </div>
+
+              {/* Registro Notifiche Recenti */}
+              <div className="space-y-3 pt-2">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-semibold text-zinc-700 uppercase tracking-wider flex items-center gap-1.5">
+                    <Clock className="w-3.5 h-3.5 text-zinc-500" />
+                    Registro Invii Recenti
+                  </h4>
+                  <span className="text-[11px] text-zinc-400">Ultimi {notifLogs.length} eventi</span>
+                </div>
+
+                {notifLogs.length === 0 ? (
+                  <div className="p-8 text-center text-xs text-zinc-400 border border-dashed border-zinc-200 rounded-xl bg-zinc-50/50">
+                    Nessun messaggio inviato di recente. Le notifiche inviate ai clienti compariranno qui in tempo reale.
+                  </div>
+                ) : (
+                  <div className="border border-zinc-200/70 rounded-xl overflow-hidden bg-white shadow-2xs">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-zinc-50 border-b border-zinc-200/60 text-zinc-500 font-semibold uppercase text-[10px] tracking-wider">
+                          <tr>
+                            <th className="px-4 py-2.5">Data & Ora</th>
+                            <th className="px-4 py-2.5">Destinatario</th>
+                            <th className="px-4 py-2.5">Canale</th>
+                            <th className="px-4 py-2.5">Tipo Evento</th>
+                            <th className="px-4 py-2.5">Stato</th>
+                            <th className="px-4 py-2.5 text-right">Azione</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-zinc-100">
+                          {notifLogs.slice(0, 15).map((log) => {
+                            const date = new Date(log.sentAt);
+                            const dateStr = date.toLocaleDateString("it-IT", { day: "numeric", month: "short" });
+                            const timeStr = date.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" });
+
+                            return (
+                              <tr key={log.id} className="hover:bg-zinc-50/60 transition-colors">
+                                <td className="px-4 py-2.5 text-zinc-500 whitespace-nowrap">
+                                  {dateStr} • {timeStr}
+                                </td>
+                                <td className="px-4 py-2.5 font-medium text-zinc-900 whitespace-nowrap">
+                                  {log.customerName}
+                                  <span className="block text-[11px] text-zinc-400 font-normal">{log.customerPhone}</span>
+                                </td>
+                                <td className="px-4 py-2.5 whitespace-nowrap">
+                                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${log.channel === "WHATSAPP" ? "bg-emerald-100 text-emerald-800" : "bg-blue-100 text-blue-800"}`}>
+                                    {log.channel}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-2.5 text-zinc-600 whitespace-nowrap">
+                                  {log.type === "CONFIRMATION" ? "Conferma" : log.type === "REMINDER" ? "Promemoria" : log.type === "CANCELLATION" ? "Cancellazione" : log.type === "REVIEW_REQUEST" ? "Recensione" : "Test"}
+                                </td>
+                                <td className="px-4 py-2.5 whitespace-nowrap">
+                                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${log.status === "SENT" || log.status === "DELIVERED" ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : log.status === "SIMULATED" ? "bg-amber-50 text-amber-700 border border-amber-200" : "bg-rose-50 text-rose-700 border border-rose-200"}`}>
+                                    {log.status === "SIMULATED" ? "Simulato (Sandbox)" : log.status === "SENT" ? "Inviato" : log.status}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-2.5 text-right whitespace-nowrap">
+                                  {log.customerPhone && (
+                                    <a
+                                      href={buildWhatsAppClickToChatUrl(log.customerPhone, log.message)}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 hover:text-emerald-800 hover:underline"
+                                    >
+                                      Apri Chat 💬
+                                    </a>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 

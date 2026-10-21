@@ -18,6 +18,7 @@ import {
 } from "../dataconnect-generated";
 import { getSalonTenantId } from "./tenant-helper";
 import { parseDateSafe } from "./date-utils";
+import { sendNotification } from "./notifications-service";
 
 export interface UnifiedAppointmentItem {
   id: string;
@@ -51,6 +52,9 @@ export interface UnifiedAppointmentItem {
   createdAt: string;
   notes?: string;
   price: number;
+  confirmationSent?: boolean;
+  reminderSent?: boolean;
+  reviewRequestSent?: boolean;
 }
 
 const STORAGE_PREFIX = "trimmy_salon_appointments_";
@@ -137,6 +141,29 @@ export async function saveSalonAppointment(appt: UnifiedAppointmentItem): Promis
     });
   } catch (dcErr) {
     console.warn("Nota salvataggio appuntamento DataConnect:", dcErr);
+  }
+
+  // 4. Invia notifica automatica di conferma (se il cliente ha un telefono)
+  if (normalized.customer?.phone && !normalized.confirmationSent) {
+    const d = parseDateSafe(normalized.startTime);
+    const dateStr = d ? d.toLocaleDateString("it-IT", { day: "numeric", month: "long" }) : "";
+    const timeStr = d ? d.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" }) : "";
+
+    sendNotification({
+      tenantId,
+      salonName: normalized.salonName || "Salone",
+      appointmentId: normalized.id,
+      customerName: `${normalized.customer.firstName} ${normalized.customer.lastName}`,
+      customerPhone: normalized.customer.phone,
+      type: "CONFIRMATION",
+      templateParams: {
+        servizio: normalized.service?.name,
+        operatore: normalized.staff?.fullName,
+        data: dateStr,
+        ora: timeStr
+      }
+    }).catch((e) => console.warn("Nota invio notifica automatica conferma:", e));
+    normalized.confirmationSent = true;
   }
 
   // Notifica la finestra dell'aggiornamento dati
@@ -425,10 +452,46 @@ export async function updateSalonAppointmentStatus(
   } catch (e) {}
 
   // 4. DataConnect
+  // 5. Invia notifica di Cancellazione o Richiesta Recensione (se applicabile)
   try {
-    await updateAppointmentStatus(dataConnect, { id: apptId, status: newStatus });
-  } catch (e) {
-    console.warn("Nota aggiornamento status DataConnect:", e);
+    const targetAppt = tenList.find((a) => a.id === apptId) || (rid ? getSalonAppointmentsSync(rid).find((a) => a.id === apptId) : undefined);
+    if (targetAppt && targetAppt.customer?.phone) {
+      const d = parseDateSafe(targetAppt.startTime);
+      const dateStr = d ? d.toLocaleDateString("it-IT", { day: "numeric", month: "long" }) : "";
+      const timeStr = d ? d.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" }) : "";
+
+      if (newStatus === "CANCELLED") {
+        sendNotification({
+          tenantId: tid,
+          salonName: targetAppt.salonName || "Salone",
+          appointmentId: apptId,
+          customerName: `${targetAppt.customer.firstName} ${targetAppt.customer.lastName}`,
+          customerPhone: targetAppt.customer.phone,
+          type: "CANCELLATION",
+          templateParams: {
+            servizio: targetAppt.service?.name,
+            data: dateStr,
+            ora: timeStr
+          }
+        }).catch((err) => console.warn("Nota invio notifica cancellazione:", err));
+      } else if (newStatus === "COMPLETED") {
+        sendNotification({
+          tenantId: tid,
+          salonName: targetAppt.salonName || "Salone",
+          appointmentId: apptId,
+          customerName: `${targetAppt.customer.firstName} ${targetAppt.customer.lastName}`,
+          customerPhone: targetAppt.customer.phone,
+          type: "REVIEW_REQUEST",
+          templateParams: {
+            servizio: targetAppt.service?.name,
+            data: dateStr,
+            ora: timeStr
+          }
+        }).catch((err) => console.warn("Nota invio notifica richiesta recensione:", err));
+      }
+    }
+  } catch (notifErr) {
+    console.warn("Nota dispatch notifica status:", notifErr);
   }
 
   if (typeof window !== "undefined") {
