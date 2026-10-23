@@ -4,10 +4,12 @@ import {
   doc, 
   setDoc, 
   getDocs, 
+  getDoc,
   query, 
   where,
   deleteDoc,
-  updateDoc
+  updateDoc,
+  runTransaction
 } from "firebase/firestore";
 import { 
   createAppointment, 
@@ -86,9 +88,137 @@ export function setSalonAppointmentsSync(tenantId: string, appts: UnifiedAppoint
   }
 }
 
+// ─── CONCURRENCY CONTROL & ANTI DOUBLE-BOOKING ───
+
+export class SlotConflictError extends Error {
+  code = "SLOT_CONFLICT";
+  conflictingAppointmentId?: string;
+  constructor(message: string, conflictingAppointmentId?: string) {
+    super(message);
+    this.name = "SlotConflictError";
+    this.conflictingAppointmentId = conflictingAppointmentId;
+  }
+}
+
+export interface ScheduleLockSlot {
+  appointmentId: string;
+  startTime: string; // ISO
+  endTime: string;   // ISO
+  status: string;    // "CONFIRMED" | "CANCELLED"
+  staffId?: string;
+  customerName?: string;
+  serviceName?: string;
+}
+
+export interface DayScheduleLock {
+  staffId: string;
+  date: string; // YYYY-MM-DD
+  slots: ScheduleLockSlot[];
+  updatedAt: string;
+}
+
 /**
- * Salva un appuntamento sia su Cloud Firestore che su DataConnect e LocalStorage
- * garantendo la visibilità immediata nell'Agenda del salone.
+ * Converte un timestamp ISO o Date nella data locale formato 'YYYY-MM-DD'
+ */
+export function getLocalDateString(isoOrDate: string | Date): string {
+  const d = typeof isoOrDate === "string" ? parseDateSafe(isoOrDate) : isoOrDate;
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * Verifica se due intervalli temporali si sovrappongono
+ */
+export function isTimeRangeOverlapping(
+  startA: Date | string,
+  endA: Date | string,
+  startB: Date | string,
+  endB: Date | string
+): boolean {
+  const aStart = new Date(startA).getTime();
+  const aEnd = new Date(endA).getTime();
+  const bStart = new Date(startB).getTime();
+  const bEnd = new Date(endB).getTime();
+
+  return aStart < bEnd && aEnd > bStart;
+}
+
+/**
+ * Recupera gli intervalli già occupati per un operatore e data specifica
+ * Utilizzato dall'interfaccia (wizard e calendario) per mostrare gli slot disabilitati
+ */
+export async function getOccupiedSlotsForStaff(
+  tenantId: string,
+  staffId: string,
+  dateStr: string
+): Promise<{ startTime: string; endTime: string }[]> {
+  const tid = getSalonTenantId(tenantId);
+  const occupiedMap = new Map<string, { startTime: string; endTime: string }>();
+
+  // 1. Prova da Cloud Firestore (schedule_locks)
+  try {
+    const lockRef = doc(db, "saloni", tid, "schedule_locks", `${staffId}_${dateStr}`);
+    const snap = await getDoc(lockRef);
+    if (snap.exists()) {
+      const data = snap.data() as DayScheduleLock;
+      if (Array.isArray(data.slots)) {
+        data.slots
+          .filter((s) => s.status !== "CANCELLED")
+          .forEach((s) => occupiedMap.set(`${s.startTime}_${s.endTime}`, { startTime: s.startTime, endTime: s.endTime }));
+      }
+    }
+  } catch (e) {
+    console.warn("Nota lettura schedule_locks:", e);
+  }
+
+  // 2. Unisci gli appuntamenti presenti in cache locale del salone
+  const localAppts = getSalonAppointmentsSync(tid);
+  localAppts.forEach((a) => {
+    if (a.status === "CANCELLED") return;
+    if (staffId && staffId !== "any" && a.staffId !== staffId) return;
+    const apptDateStr = getLocalDateString(a.startTime);
+    if (apptDateStr === dateStr) {
+      occupiedMap.set(`${a.startTime}_${a.endTime}`, { startTime: a.startTime, endTime: a.endTime });
+    }
+  });
+
+  return Array.from(occupiedMap.values());
+}
+
+/**
+ * Rilascia uno slot lock (in caso di cancellazione o eliminazione appuntamento)
+ */
+export async function releaseSlotLock(
+  tenantId: string,
+  staffId: string,
+  dateStr: string,
+  appointmentId: string
+): Promise<void> {
+  try {
+    const tid = getSalonTenantId(tenantId);
+    const lockRef = doc(db, "saloni", tid, "schedule_locks", `${staffId}_${dateStr}`);
+    await runTransaction(db, async (tx) => {
+      const snap = await tx.get(lockRef);
+      if (snap.exists()) {
+        const data = snap.data() as DayScheduleLock;
+        const currentSlots = Array.isArray(data.slots) ? data.slots : [];
+        const updatedSlots = currentSlots.map((s) =>
+          s.appointmentId === appointmentId ? { ...s, status: "CANCELLED" } : s
+        );
+        tx.update(lockRef, { slots: updatedSlots, updatedAt: new Date().toISOString() });
+      }
+    });
+  } catch (e) {
+    console.warn("Nota rilascio slot lock:", e);
+  }
+}
+
+/**
+ * Salva un appuntamento con TRANSAZIONE ATOMICA ACID (Firestore runTransaction).
+ * Blocca alla radice qualsiasi tentativo di double-booking contemporaneo sullo stesso operatore.
+ * Se un altro cliente ha appena confermato lo stesso orario, la transazione fallisce lanciando SlotConflictError.
  */
 export async function saveSalonAppointment(appt: UnifiedAppointmentItem): Promise<void> {
   const tenantId = getSalonTenantId(appt.tenantId || appt.salonRawId);
@@ -102,7 +232,105 @@ export async function saveSalonAppointment(appt: UnifiedAppointmentItem): Promis
     createdAt: appt.createdAt || new Date().toISOString()
   };
 
-  // 1. Salva in LocalStorage per entrambi gli ID (UUID tenant e Raw UID)
+  const staffId = normalized.staffId || "staff-general";
+  const dateStr = getLocalDateString(normalized.startTime);
+  const lockKey = `${staffId}_${dateStr}`;
+  const lockDocRef = doc(db, "saloni", tenantId, "schedule_locks", lockKey);
+  const tenantDocRef = doc(db, "saloni", tenantId, "appuntamenti", normalized.id);
+
+  // ─── TRANSAZIONE ATOMICA DI CONCORRENZA (ACID) ───
+  await runTransaction(db, async (transaction) => {
+    // 1. Lettura dello stato corrente degli slot occupati per questo operatore e data
+    const lockSnap = await transaction.get(lockDocRef);
+    let currentSlots: ScheduleLockSlot[] = [];
+
+    if (lockSnap.exists()) {
+      const lockData = lockSnap.data() as DayScheduleLock;
+      if (Array.isArray(lockData.slots)) {
+        currentSlots = lockData.slots;
+      }
+    } else {
+      // Inizializza con appuntamenti già noti in cache locale
+      const localExisting = getSalonAppointmentsSync(tenantId);
+      currentSlots = localExisting
+        .filter((a) => {
+          if (a.status === "CANCELLED") return false;
+          if (a.staffId !== staffId) return false;
+          return getLocalDateString(a.startTime) === dateStr;
+        })
+        .map((a) => ({
+          appointmentId: a.id,
+          startTime: a.startTime,
+          endTime: a.endTime,
+          status: a.status || "CONFIRMED",
+          staffId: a.staffId,
+          customerName: a.customer ? `${a.customer.firstName} ${a.customer.lastName}` : undefined,
+          serviceName: a.service?.name
+        }));
+    }
+
+    // 2. Controllo di Conflitto di Orario
+    const isCancelled = normalized.status === "CANCELLED";
+    if (!isCancelled) {
+      const conflictingSlot = currentSlots.find((slot) => {
+        // Ignora lo stesso appuntamento se stiamo aggiornando
+        if (slot.appointmentId === normalized.id) return false;
+        // Ignora appuntamenti annullati
+        if (slot.status === "CANCELLED") return false;
+
+        return isTimeRangeOverlapping(
+          normalized.startTime,
+          normalized.endTime,
+          slot.startTime,
+          slot.endTime
+        );
+      });
+
+      if (conflictingSlot) {
+        const conflictStart = new Date(conflictingSlot.startTime).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" });
+        const conflictEnd = new Date(conflictingSlot.endTime).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" });
+        throw new SlotConflictError(
+          `L'operatore selezionato è già occupato tra le ${conflictStart} e le ${conflictEnd}. Seleziona un altro orario o un altro membro del team.`,
+          conflictingSlot.appointmentId
+        );
+      }
+    }
+
+    // 3. Aggiorna lo slot lock atomico
+    const updatedSlots: ScheduleLockSlot[] = [
+      ...currentSlots.filter((s) => s.appointmentId !== normalized.id),
+      {
+        appointmentId: normalized.id,
+        startTime: normalized.startTime,
+        endTime: normalized.endTime,
+        status: normalized.status,
+        staffId: normalized.staffId,
+        customerName: normalized.customer ? `${normalized.customer.firstName} ${normalized.customer.lastName}` : undefined,
+        serviceName: normalized.service?.name
+      }
+    ];
+
+    transaction.set(lockDocRef, {
+      staffId,
+      date: dateStr,
+      slots: updatedSlots,
+      updatedAt: new Date().toISOString()
+    }, { merge: true });
+
+    // 4. Scrivi l'appuntamento nella sottocollezione del salone
+    transaction.set(tenantDocRef, normalized, { merge: true });
+
+    if (rawId && rawId !== tenantId) {
+      const rawDocRef = doc(db, "saloni", rawId, "appuntamenti", normalized.id);
+      transaction.set(rawDocRef, normalized, { merge: true });
+    }
+
+    // 5. Scrivi nella collezione globale per ridondanza
+    const globalDocRef = doc(db, "appointments", normalized.id);
+    transaction.set(globalDocRef, normalized, { merge: true });
+  });
+
+  // 6. Aggiorna cache locale per reattività immediata a 0ms
   const currentTen = getSalonAppointmentsSync(tenantId);
   setSalonAppointmentsSync(tenantId, [normalized, ...currentTen.filter((a) => a.id !== normalized.id)]);
 
@@ -111,24 +339,7 @@ export async function saveSalonAppointment(appt: UnifiedAppointmentItem): Promis
     setSalonAppointmentsSync(rawId, [normalized, ...currentRaw.filter((a) => a.id !== normalized.id)]);
   }
 
-  // 2. Salva in Cloud Firestore sotto la sottocollezione del salone (/saloni/{tenantId}/appuntamenti/{id})
-  try {
-    const tenantDocRef = doc(db, "saloni", tenantId, "appuntamenti", normalized.id);
-    await setDoc(tenantDocRef, normalized, { merge: true });
-
-    if (rawId && rawId !== tenantId) {
-      const rawDocRef = doc(db, "saloni", rawId, "appuntamenti", normalized.id);
-      await setDoc(rawDocRef, normalized, { merge: true });
-    }
-
-    // Salva anche nella collezione globale /appointments per ridondanza
-    const globalDocRef = doc(db, "appointments", normalized.id);
-    await setDoc(globalDocRef, normalized, { merge: true });
-  } catch (fsErr) {
-    console.warn("Nota salvataggio appuntamento Firestore:", fsErr);
-  }
-
-  // 3. Salva in Cloud SQL DataConnect (se disponibile)
+  // 7. Salva in Cloud SQL DataConnect (se disponibile)
   try {
     await createAppointment(dataConnect, {
       tenantId,
@@ -143,8 +354,8 @@ export async function saveSalonAppointment(appt: UnifiedAppointmentItem): Promis
     console.warn("Nota salvataggio appuntamento DataConnect:", dcErr);
   }
 
-  // 4. Invia notifica automatica di conferma (se il cliente ha un telefono)
-  if (normalized.customer?.phone && !normalized.confirmationSent) {
+  // 8. Invia notifica automatica di conferma (se il cliente ha un telefono)
+  if (normalized.customer?.phone && !normalized.confirmationSent && normalized.status !== "CANCELLED") {
     const d = parseDateSafe(normalized.startTime);
     const dateStr = d ? d.toLocaleDateString("it-IT", { day: "numeric", month: "long" }) : "";
     const timeStr = d ? d.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" }) : "";
@@ -451,6 +662,13 @@ export async function updateSalonAppointmentStatus(
     await updateDoc(doc(db, "appointments", apptId), { status: newStatus });
   } catch (e) {}
 
+  // 3b. Se l'appuntamento viene annullato, rilascia lo slot lock per liberare l'orario
+  const targetAppt = tenList.find((a) => a.id === apptId) || (rid ? getSalonAppointmentsSync(rid).find((a) => a.id === apptId) : undefined);
+  if (newStatus === "CANCELLED" && targetAppt) {
+    const dateStr = getLocalDateString(targetAppt.startTime);
+    releaseSlotLock(tid, targetAppt.staffId, dateStr, apptId).catch((err) => console.warn("Nota rilascio slot lock:", err));
+  }
+
   // 4. DataConnect
   // 5. Invia notifica di Cancellazione o Richiesta Recensione (se applicabile)
   try {
@@ -551,6 +769,13 @@ export async function deleteSalonAppointment(
   try {
     await deleteDoc(doc(db, "appointments", apptId));
   } catch (e) {}
+
+  // 3b. Rilascia lo slot lock atomico
+  const targetDelAppt = tenList.find((a) => a.id === apptId) || (rid ? getSalonAppointmentsSync(rid).find((a) => a.id === apptId) : undefined);
+  if (targetDelAppt) {
+    const dateStr = getLocalDateString(targetDelAppt.startTime);
+    releaseSlotLock(tid, targetDelAppt.staffId, dateStr, apptId).catch((err) => console.warn("Nota rilascio slot lock:", err));
+  }
 
   // 4. DataConnect
   try {

@@ -15,7 +15,8 @@ import {
   ArrowLeft,
   Sparkles,
   ShieldCheck,
-  MessageSquare
+  MessageSquare,
+  AlertCircle
 } from "lucide-react";
 import { 
   SalonListing, 
@@ -31,7 +32,12 @@ import { createAppointment } from "@/dataconnect-generated";
 import { addSalonNotification } from "@/lib/salon-notifications";
 import { parseDateSafe } from "@/lib/date-utils";
 import { ensureCustomerForBooking } from "@/lib/customers-store";
-import { saveSalonAppointment } from "@/lib/appointments-service";
+import { 
+  saveSalonAppointment, 
+  getOccupiedSlotsForStaff, 
+  isTimeRangeOverlapping, 
+  SlotConflictError 
+} from "@/lib/appointments-service";
 import { getSalonTenantId } from "@/lib/tenant-helper";
 
 interface BookingWizardModalProps {
@@ -66,6 +72,9 @@ export default function BookingWizardModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [confirmedAppointment, setConfirmedAppointment] = useState<ClientAppointmentItem | null>(null);
   const [availableDays, setAvailableDays] = useState<{ dateStr: string; dayName: string; dayNumber: number; monthName: string; isToday: boolean }[]>([]);
+  const [occupiedSlots, setOccupiedSlots] = useState<{ startTime: string; endTime: string }[]>([]);
+  const [isLoadingSlots, setIsLoadingSlots] = useState(false);
+  const [conflictError, setConflictError] = useState<string | null>(null);
 
   // Dati cliente per la prenotazione (modificabili/confermabili nello step 4)
   const [customerFirstName, setCustomerFirstName] = useState("");
@@ -130,6 +139,36 @@ export default function BookingWizardModal({
       "14:00", "14:30", "15:00", "15:30", "16:00", "16:30", "17:00", "17:30", "18:00", "18:30", "19:00"
     ];
   }, []);
+
+  // Controllo slot occupati in tempo reale da Cloud Firestore
+  useEffect(() => {
+    if (!isOpen || currentStep !== 3 || !selectedDate) return;
+    let isMounted = true;
+    setIsLoadingSlots(true);
+    const salonTenantId = getSalonTenantId(salon.id);
+    getOccupiedSlotsForStaff(salonTenantId, activeStaff.id, selectedDate)
+      .then((slots) => {
+        if (isMounted) setOccupiedSlots(slots);
+      })
+      .catch((err) => console.warn("Errore caricamento slot occupati:", err))
+      .finally(() => {
+        if (isMounted) setIsLoadingSlots(false);
+      });
+
+    return () => { isMounted = false; };
+  }, [isOpen, currentStep, selectedDate, activeStaff.id, salon.id]);
+
+  const isSlotOccupied = (time: string) => {
+    if (!selectedDate) return false;
+    const [h, m] = time.split(":").map(Number);
+    const start = parseDateSafe(selectedDate);
+    start.setHours(h, m, 0, 0);
+    const end = new Date(start.getTime() + activeService.durationMinutes * 60 * 1000);
+
+    return occupiedSlots.some((occ) =>
+      isTimeRangeOverlapping(start, end, occ.startTime, occ.endTime)
+    );
+  };
 
   if (!isOpen) return null;
 
@@ -259,9 +298,14 @@ export default function BookingWizardModal({
       if (onBookingConfirmed) {
         onBookingConfirmed();
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("Errore salvataggio prenotazione:", err);
-      alert("Si è verificato un errore durante la prenotazione. Riprova.");
+      if (err instanceof SlotConflictError || err?.code === "SLOT_CONFLICT" || err?.message?.includes("occupato")) {
+        setConflictError(err.message || "L'orario selezionato è stato appena occupato da un altro cliente. Per favore scegli un altro orario o un altro operatore.");
+        setCurrentStep(3);
+      } else {
+        alert("Si è verificato un errore durante la prenotazione. Riprova.");
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -445,6 +489,14 @@ export default function BookingWizardModal({
           {/* STEP 3: SCELTA DATA & ORARIO */}
           {currentStep === 3 && (
             <div className="space-y-6">
+              {/* Alert di Conflitto Concorrenza (se un altro utente ha appena prenotato) */}
+              {conflictError && (
+                <div className="p-3.5 bg-amber-50 border border-amber-200/80 rounded-2xl flex items-center gap-3 text-amber-800 text-xs font-medium animate-in fade-in duration-200">
+                  <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                  <span>{conflictError}</span>
+                </div>
+              )}
+
               {/* Selezione Giorno */}
               <div>
                 <div className="flex items-center justify-between mb-2.5">
@@ -459,7 +511,10 @@ export default function BookingWizardModal({
                     return (
                       <button
                         key={d.dateStr}
-                        onClick={() => setSelectedDate(d.dateStr)}
+                        onClick={() => {
+                          setSelectedDate(d.dateStr);
+                          setConflictError(null);
+                        }}
                         className={`flex flex-col items-center justify-center min-w-[74px] py-3.5 px-2 rounded-2xl border transition-all text-center ${
                           isSelected
                             ? "bg-zinc-900 text-white border-zinc-900 shadow-md font-bold scale-[1.02]"
@@ -487,23 +542,37 @@ export default function BookingWizardModal({
                   </label>
                   <span className="text-[11px] text-emerald-700 font-semibold bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1.5">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
-                    Tempo reale
+                    {isLoadingSlots ? "Verifica slot..." : "Slot live anti-conflitto"}
                   </span>
                 </div>
                 <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
                   {timeSlots.map((time) => {
                     const isSelected = selectedTimeSlot === time;
+                    const isOccupied = isSlotOccupied(time);
+
                     return (
                       <button
                         key={time}
-                        onClick={() => setSelectedTimeSlot(time)}
-                        className={`py-2.5 px-1 text-center rounded-xl text-xs font-bold border transition-all ${
-                          isSelected
+                        disabled={isOccupied}
+                        onClick={() => {
+                          setSelectedTimeSlot(time);
+                          setConflictError(null);
+                        }}
+                        className={`py-2 px-1 text-center rounded-xl text-xs font-bold border transition-all flex flex-col items-center justify-center min-h-[46px] ${
+                          isOccupied
+                            ? "bg-zinc-100/70 text-zinc-400 border-zinc-200/60 opacity-45 cursor-not-allowed line-through"
+                            : isSelected
                             ? "bg-zinc-900 text-white border-zinc-900 shadow-xs ring-2 ring-zinc-900/10 scale-105"
                             : "bg-zinc-50 text-zinc-700 border-zinc-200/70 hover:border-zinc-300 hover:bg-white hover:text-zinc-900"
                         }`}
+                        title={isOccupied ? "Orario già occupato" : `Prenota alle ${time}`}
                       >
-                        {time}
+                        <span>{time}</span>
+                        {isOccupied && (
+                          <span className="text-[9px] font-semibold no-underline text-rose-500/80 -mt-0.5">
+                            Occupato
+                          </span>
+                        )}
                       </button>
                     );
                   })}

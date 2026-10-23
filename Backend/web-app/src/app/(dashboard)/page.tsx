@@ -575,9 +575,13 @@ export default function AgendaPage() {
       if (typeof window !== "undefined") {
         window.dispatchEvent(new CustomEvent("trimmy-data-updated"));
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("Errore creazione appuntamento:", err);
-      alert("Impossibile salvare l'appuntamento.");
+      if (err?.code === "SLOT_CONFLICT" || err?.message?.includes("occupato")) {
+        alert("⚠️ Conflitto Concorrenza: " + err.message);
+      } else {
+        alert("Impossibile salvare l'appuntamento: " + (err?.message || "Errore imprevisto."));
+      }
     } finally {
       setIsSubmitting(false);
     }
