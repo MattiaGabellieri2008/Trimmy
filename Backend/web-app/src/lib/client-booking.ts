@@ -27,6 +27,7 @@ export interface SalonListing {
   distance: string;
   servicesCount: number;
   featuredServices: { name: string; price: number; duration: number }[];
+  services?: { id: string | number; name: string; category: string; price: number; durationMinutes: number; description?: string }[];
 }
 
 export interface ClientAppointmentItem {

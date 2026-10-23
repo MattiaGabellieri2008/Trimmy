@@ -34,6 +34,10 @@ import { dataConnect } from "@/lib/firebase";
 import { createAppointment } from "@/dataconnect-generated";
 import { parseDateSafe } from "@/lib/date-utils";
 import { ensureCustomerForBooking } from "@/lib/customers-store";
+import { fetchSalonById } from "@/lib/salons-service";
+import { fetchSalonStaff } from "@/lib/staff-store";
+import { saveSalonAppointment, getLocalDateString } from "@/lib/appointments-service";
+import { getSalonTenantId } from "@/lib/tenant-helper";
 
 function PrenotaContent() {
   const router = useRouter();
@@ -47,13 +51,54 @@ function PrenotaContent() {
 
   // Wizard state: 1: Trattamento, 2: Operatore, 3: Data & Ora, 4: Conferma, 5: Fatto
   const [step, setStep] = useState<1 | 2 | 3 | 4 | 5>(1);
-  const [selectedServiceId, setSelectedServiceId] = useState(DEFAULT_BOOKING_SERVICES[0].id);
+  const [selectedServiceId, setSelectedServiceId] = useState("");
   const [selectedStaffId, setSelectedStaffId] = useState("any");
   const [selectedDate, setSelectedDate] = useState("");
   const [selectedTimeSlot, setSelectedTimeSlot] = useState("11:00");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [confirmedAppt, setConfirmedAppt] = useState<ClientAppointmentItem | null>(null);
   const [availableDays, setAvailableDays] = useState<{ dateStr: string; dayName: string; dayNumber: number; monthName: string; isToday: boolean }[]>([]);
+  const [salonStaffList, setSalonStaffList] = useState<any[]>([]);
+
+  // Carica i dati reali del salone da Cloud Firestore (o fallback su INITIAL_SALONS)
+  useEffect(() => {
+    if (!saloneId) return;
+    fetchSalonById(saloneId).then((found) => {
+      if (found) {
+        setSalon(found);
+        if (found.services && found.services.length > 0) {
+          setSelectedServiceId(String(found.services[0].id));
+        }
+      }
+    }).catch(() => {});
+
+    fetchSalonStaff(saloneId).then((staff) => {
+      if (staff && staff.length > 0) {
+        setSalonStaffList(staff);
+      }
+    }).catch(() => {});
+  }, [saloneId]);
+
+  // Lista trattamenti (reali o predefiniti)
+  const servicesList = salon.services && salon.services.length > 0
+    ? salon.services
+    : DEFAULT_BOOKING_SERVICES;
+
+  // Lista staff (reali o predefiniti)
+  const staffList = salonStaffList.length > 0
+    ? salonStaffList.map((st) => ({
+        id: st.id,
+        fullName: st.fullName,
+        role: st.role || "Stylist",
+        rating: st.rating || 4.9
+      }))
+    : DEFAULT_BOOKING_STAFF;
+
+  useEffect(() => {
+    if (!selectedServiceId && servicesList.length > 0) {
+      setSelectedServiceId(String(servicesList[0].id));
+    }
+  }, [selectedServiceId, servicesList]);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (user) => {
@@ -61,7 +106,7 @@ function PrenotaContent() {
     });
 
     const now = new Date();
-    setSelectedDate(now.toISOString().split("T")[0]);
+    setSelectedDate(getLocalDateString(now));
 
     const days = [];
     for (let i = 0; i < 14; i++) {
@@ -69,7 +114,7 @@ function PrenotaContent() {
       d.setDate(d.getDate() + i);
       if (d.getDay() === 0) continue;
       days.push({
-        dateStr: d.toISOString().split("T")[0],
+        dateStr: getLocalDateString(d),
         dayName: d.toLocaleDateString("it-IT", { weekday: "short" }),
         dayNumber: d.getDate(),
         monthName: d.toLocaleDateString("it-IT", { month: "short" }),
@@ -81,15 +126,10 @@ function PrenotaContent() {
     return () => unsub();
   }, []);
 
-  useEffect(() => {
-    const found = INITIAL_SALONS.find((s) => s.id === saloneId);
-    if (found) setSalon(found);
-  }, [saloneId]);
-
-  const activeService = DEFAULT_BOOKING_SERVICES.find((s) => s.id === selectedServiceId) || DEFAULT_BOOKING_SERVICES[0];
+  const activeService = servicesList.find((s) => String(s.id) === String(selectedServiceId)) || servicesList[0];
   const activeStaff = selectedStaffId === "any"
-    ? { id: "staff-marco", fullName: "Qualsiasi operatore disponibile", role: "Team " + salon.name }
-    : DEFAULT_BOOKING_STAFF.find((st) => st.id === selectedStaffId) || DEFAULT_BOOKING_STAFF[0];
+    ? { id: staffList[0]?.id || "staff-default", fullName: "Qualsiasi operatore disponibile", role: "Team " + salon.name }
+    : staffList.find((st) => String(st.id) === String(selectedStaffId)) || staffList[0];
 
   const timeSlots = [
     "09:00", "09:30", "10:00", "10:30", "11:00", "11:30", "12:00",
@@ -141,25 +181,62 @@ function PrenotaContent() {
         const nameParts = clientName.trim().split(" ");
         const firstName = nameParts[0] || "Cliente";
         const lastName = nameParts.slice(1).join(" ") || "Trimmy";
+        const salonTenantId = getSalonTenantId(salon.id);
+        const salonRawId = salon.id;
 
-        const customerRecord = await ensureCustomerForBooking(salon.id, {
+        const customerRecord = await ensureCustomerForBooking(salonTenantId, {
           firstName,
           lastName,
           phone: currentUser?.phoneNumber || "320 000 0000",
           email: currentUser?.email || null
+        }, salonRawId);
+
+        // Salva direttamente nell'agenda reale del salone (Cloud Firestore + schedule locks)
+        await saveSalonAppointment({
+          id: newAppt.id,
+          tenantId: salonTenantId,
+          salonRawId: salonRawId,
+          salonName: salon.name,
+          customerId: customerRecord.id,
+          customer: {
+            id: customerRecord.id,
+            firstName: customerRecord.firstName,
+            lastName: customerRecord.lastName,
+            phone: customerRecord.phone,
+            email: customerRecord.email || undefined
+          },
+          serviceId: String(activeService.id),
+          service: {
+            id: String(activeService.id),
+            name: activeService.name,
+            durationMinutes: activeService.durationMinutes,
+            price: activeService.price
+          },
+          staffId: activeStaff.id,
+          staff: {
+            id: activeStaff.id,
+            fullName: activeStaff.fullName,
+            role: activeStaff.role
+          },
+          startTime: start.toISOString(),
+          endTime: end.toISOString(),
+          status: "CONFIRMED",
+          createdAt: new Date().toISOString(),
+          price: activeService.price
         });
 
-        await createAppointment(dataConnect, {
-          tenantId: salon.id,
+        // Sincronizzazione opzionale su Data Connect
+        createAppointment(dataConnect, {
+          tenantId: salonTenantId,
           customerId: customerRecord.id,
-          serviceId: activeService.id,
+          serviceId: String(activeService.id),
           staffId: activeStaff.id,
           startTime: start.toISOString(),
           endTime: end.toISOString(),
           status: "CONFIRMED"
-        });
+        }).catch((e) => console.warn("SQL Connect background sync:", e));
       } catch (e) {
-        console.warn("SQL Connect background sync:", e);
+        console.warn("Sync errore appuntamento:", e);
       }
 
       saveClientAppointment(userUid, newAppt);
@@ -283,15 +360,15 @@ function PrenotaContent() {
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <h3 className="font-bold text-lg text-zinc-900 tracking-tight">Seleziona il tuo trattamento</h3>
-                  <span className="text-xs text-zinc-500 font-mono">{DEFAULT_BOOKING_SERVICES.length} disponibili</span>
+                  <span className="text-xs text-zinc-500 font-mono">{servicesList.length} disponibili</span>
                 </div>
                 <div className="space-y-3">
-                  {DEFAULT_BOOKING_SERVICES.map((s) => {
-                    const isSelected = selectedServiceId === s.id;
+                  {servicesList.map((s) => {
+                    const isSelected = String(selectedServiceId) === String(s.id);
                     return (
                       <div
                         key={s.id}
-                        onClick={() => setSelectedServiceId(s.id)}
+                        onClick={() => setSelectedServiceId(String(s.id))}
                         className={`p-4 rounded-2xl border cursor-pointer transition-all flex items-start justify-between gap-4 ${
                           isSelected
                             ? "border-zinc-900 bg-zinc-50 ring-1 ring-zinc-900 shadow-xs"
@@ -356,12 +433,12 @@ function PrenotaContent() {
                     {selectedStaffId === "any" && <Check className="w-5 h-5 text-emerald-600" />}
                   </div>
 
-                  {DEFAULT_BOOKING_STAFF.map((st) => {
-                    const isSelected = selectedStaffId === st.id;
+                  {staffList.map((st) => {
+                    const isSelected = String(selectedStaffId) === String(st.id);
                     return (
                       <div
                         key={st.id}
-                        onClick={() => setSelectedStaffId(st.id)}
+                        onClick={() => setSelectedStaffId(String(st.id))}
                         className={`p-4 rounded-2xl border cursor-pointer transition-all flex items-center justify-between ${
                           isSelected
                             ? "border-zinc-900 bg-zinc-50 ring-1 ring-zinc-900 shadow-xs"

@@ -13,13 +13,11 @@ service cloud.firestore {
       allow create: if request.auth != null
                     && request.auth.uid == userId;
 
-      // Update: solo il proprietario, e NON può modificare i campi di ruolo/piano
+      // Update: solo il proprietario, e NON può modificare il proprio ruolo
       allow update: if request.auth != null
                     && request.auth.uid == userId
                     // Impedisci escalation: il campo 'role' non può essere cambiato dopo la creazione
-                    && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['role']))
-                    // Impedisci cambio piano senza backend: il campo 'planType' è immutabile client-side
-                    && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['planType']));
+                    && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['role']));
 
       // Delete: solo il proprietario può eliminare il proprio account
       allow delete: if request.auth != null
@@ -43,9 +41,10 @@ service cloud.firestore {
         allow read, write: if request.auth != null && (request.auth.uid == salonId || request.auth.uid == clientId);
       }
 
-      // STAFF E TEAM: Visibile solo al salone proprietario
+      // STAFF E TEAM: Lettura pubblica per permettere ai clienti di selezionare l'operatore durante la prenotazione
       match /staff/{staffId} {
-        allow read, write: if request.auth != null && request.auth.uid == salonId;
+        allow read: if true;
+        allow write: if request.auth != null && request.auth.uid == salonId;
       }
 
       // INVITI COLLABORATORI: Visibili e gestibili solo dal salone proprietario
@@ -53,9 +52,10 @@ service cloud.firestore {
         allow read, write: if request.auth != null && request.auth.uid == salonId;
       }
 
-      // NOTIFICHE SALONE: Solo il salone
+      // NOTIFICHE SALONE: Il salone gestisce le proprie notifiche; i clienti autenticati possono creare avvisi di prenotazione
       match /notifiche/{notifId} {
-        allow read, write: if request.auth != null && request.auth.uid == salonId;
+        allow read, update, delete: if request.auth != null && request.auth.uid == salonId;
+        allow create: if request.auth != null;
       }
 
       // SCHEDULE LOCKS: Controllo concorrenza atomico anti double-booking

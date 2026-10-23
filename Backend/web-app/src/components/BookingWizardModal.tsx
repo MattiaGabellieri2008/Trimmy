@@ -36,9 +36,11 @@ import {
   saveSalonAppointment, 
   getOccupiedSlotsForStaff, 
   isTimeRangeOverlapping, 
-  SlotConflictError 
+  SlotConflictError,
+  getLocalDateString 
 } from "@/lib/appointments-service";
 import { getSalonTenantId } from "@/lib/tenant-helper";
+import { fetchSalonStaff } from "@/lib/staff-store";
 
 interface BookingWizardModalProps {
   salon: SalonListing;
@@ -83,6 +85,38 @@ export default function BookingWizardModal({
   const [customerEmail, setCustomerEmail] = useState(userEmail || (userUid && userUid.includes("@") ? userUid : ""));
   const [customerNotes, setCustomerNotes] = useState("");
 
+  // Lista servizi dinamica: usa quelli del salone se presenti, altrimenti fallback
+  const servicesList = useMemo(() => {
+    if (salon.services && salon.services.length > 0) {
+      return salon.services;
+    }
+    return DEFAULT_BOOKING_SERVICES;
+  }, [salon.services]);
+
+  // Lista staff reale recuperata da Firestore per il salone
+  const [salonStaffList, setSalonStaffList] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (!salon.id) return;
+    fetchSalonStaff(salon.id).then((staff) => {
+      if (staff && staff.length > 0) {
+        setSalonStaffList(staff);
+      }
+    }).catch(() => {});
+  }, [salon.id]);
+
+  const staffList = useMemo(() => {
+    if (salonStaffList.length > 0) {
+      return salonStaffList.map((st) => ({
+        id: st.id,
+        fullName: st.fullName,
+        role: st.role || "Stylist",
+        rating: st.rating || 4.9
+      }));
+    }
+    return DEFAULT_BOOKING_STAFF;
+  }, [salonStaffList]);
+
   useEffect(() => {
     const parts = (userName || "Cliente").trim().split(" ");
     setCustomerFirstName(parts[0] || "Cliente");
@@ -94,12 +128,14 @@ export default function BookingWizardModal({
   useEffect(() => {
     if (preselectedServiceId) {
       setSelectedServiceId(preselectedServiceId);
+    } else if (servicesList.length > 0) {
+      setSelectedServiceId(String(servicesList[0].id));
     }
-  }, [preselectedServiceId]);
+  }, [preselectedServiceId, servicesList]);
 
   useEffect(() => {
     const now = new Date();
-    setSelectedDate(now.toISOString().split("T")[0]);
+    setSelectedDate(getLocalDateString(now));
 
     const days = [];
     for (let i = 0; i < 14; i++) {
@@ -109,7 +145,7 @@ export default function BookingWizardModal({
       if (d.getDay() === 0) continue;
 
       days.push({
-        dateStr: d.toISOString().split("T")[0],
+        dateStr: getLocalDateString(d),
         dayName: d.toLocaleDateString("it-IT", { weekday: "short" }),
         dayNumber: d.getDate(),
         monthName: d.toLocaleDateString("it-IT", { month: "short" }),
@@ -121,16 +157,16 @@ export default function BookingWizardModal({
 
   // Servizio selezionato
   const activeService = useMemo(() => {
-    return DEFAULT_BOOKING_SERVICES.find((s) => s.id === selectedServiceId) || DEFAULT_BOOKING_SERVICES[0];
-  }, [selectedServiceId]);
+    return servicesList.find((s) => String(s.id) === String(selectedServiceId)) || servicesList[0];
+  }, [servicesList, selectedServiceId]);
 
   // Operatore selezionato
   const activeStaff = useMemo(() => {
     if (selectedStaffId === "any") {
-      return { id: "staff-marco", fullName: "Qualsiasi operatore disponibile", role: "Staff " + salon.name };
+      return { id: staffList[0]?.id || "staff-default", fullName: "Qualsiasi operatore disponibile", role: "Staff " + salon.name };
     }
-    return DEFAULT_BOOKING_STAFF.find((st) => st.id === selectedStaffId) || DEFAULT_BOOKING_STAFF[0];
-  }, [selectedStaffId, salon.name]);
+    return staffList.find((st) => String(st.id) === String(selectedStaffId)) || staffList[0];
+  }, [selectedStaffId, staffList, salon.name]);
 
   // Slot orari disponibili (dalle 09:00 alle 19:30)
   const timeSlots = useMemo(() => {
@@ -362,17 +398,17 @@ export default function BookingWizardModal({
                   Listino ufficiale verificato per <strong>{salon.name}</strong>:
                 </p>
                 <span className="text-[11px] text-zinc-600 font-mono font-medium">
-                  {DEFAULT_BOOKING_SERVICES.length} servizi attivi
+                  {servicesList.length} servizi attivi
                 </span>
               </div>
 
               <div className="space-y-2.5">
-                {DEFAULT_BOOKING_SERVICES.map((srv) => {
-                  const isSelected = selectedServiceId === srv.id;
+                {servicesList.map((srv) => {
+                  const isSelected = String(selectedServiceId) === String(srv.id);
                   return (
                     <div
                       key={srv.id}
-                      onClick={() => setSelectedServiceId(srv.id)}
+                      onClick={() => setSelectedServiceId(String(srv.id))}
                       className={`p-4 rounded-2xl border cursor-pointer transition-all flex items-start justify-between gap-4 ${
                         isSelected 
                           ? "border-zinc-900 bg-zinc-50 text-zinc-900 ring-1 ring-zinc-900 shadow-xs" 
@@ -448,12 +484,12 @@ export default function BookingWizardModal({
                 </div>
 
                 {/* Lista Operatori Specifici */}
-                {DEFAULT_BOOKING_STAFF.map((st) => {
-                  const isSelected = selectedStaffId === st.id;
+                {staffList.map((st) => {
+                  const isSelected = String(selectedStaffId) === String(st.id);
                   return (
                     <div
                       key={st.id}
-                      onClick={() => setSelectedStaffId(st.id)}
+                      onClick={() => setSelectedStaffId(String(st.id))}
                       className={`p-4 rounded-2xl border cursor-pointer transition-all flex items-center justify-between ${
                         isSelected
                           ? "border-zinc-900 bg-zinc-50 text-zinc-900 ring-1 ring-zinc-900 shadow-xs"

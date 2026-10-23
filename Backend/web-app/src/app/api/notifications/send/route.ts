@@ -86,10 +86,14 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // ─── 4. AUTORIZZAZIONE: Solo il proprietario del salone può inviare notifiche ───
-    if (callerUid !== tenantId) {
+    // ─── 4. AUTORIZZAZIONE: Il titolare del salone può inviare qualsiasi notifica;
+    // un utente/cliente autenticato può inviare SOLO la notifica di conferma del proprio appuntamento ("CONFIRMATION").
+    const isSalonOwner = callerUid === tenantId;
+    const isBookingConfirmation = type === "CONFIRMATION";
+
+    if (!isSalonOwner && !isBookingConfirmation) {
       return NextResponse.json(
-        { success: false, error: "Non sei autorizzato a inviare notifiche per questo salone." },
+        { success: false, error: "Non sei autorizzato a inviare questa tipologia di notifica per questo salone." },
         { status: 403 }
       );
     }

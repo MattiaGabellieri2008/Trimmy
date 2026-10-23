@@ -1,8 +1,7 @@
 import { db } from "./firebase";
-import { collection, query, where, getDocs } from "firebase/firestore";
-import { SalonListing } from "./client-booking";
+import { collection, query, where, getDocs, doc, getDoc } from "firebase/firestore";
+import { SalonListing, INITIAL_SALONS } from "./client-booking";
 import { getSalonServices, SalonServiceItem } from "./services-store";
-
 
 // Coordinate GPS di riferimento per le principali città italiane
 const CITY_COORDINATES: Record<string, { lat: number; lng: number }> = {
@@ -49,7 +48,7 @@ export function mapUserDocToSalonListing(docId: string, data: any): SalonListing
   const city = data.city || "Milano";
   const address = data.address || `${city} - Sede Operativa`;
   const zone = data.zone || "Centro";
-  const phone = data.phone || data.partitaIva ? `P.IVA: ${data.partitaIva}` : "Contatto Diretto";
+  const phone = data.phone || (data.partitaIva ? `P.IVA: ${data.partitaIva}` : "Contatto Diretto");
   const category = (data.category as any) || "Barber Shop";
   
   // Coordinate: usa lat/lng reali se salvati, altrimenti le calcola dalla città con jitter deterministico
@@ -62,17 +61,28 @@ export function mapUserDocToSalonListing(docId: string, data: any): SalonListing
     lng = coords.lng;
   }
 
-  // Recupera i trattamenti reali salvati per questo salone
-  const realServices = getSalonServices(docId);
-  const featuredServices = realServices.slice(0, 3).map((s: SalonServiceItem) => ({
+  // Recupera i trattamenti reali salvati per questo salone (priorità su data.services salvati su Firestore)
+  const rawServices = Array.isArray(data.services) && data.services.length > 0
+    ? data.services
+    : getSalonServices(docId);
+
+  const realServices = rawServices.map((s: any) => ({
+    id: s.id || `srv-${s.name}`,
+    name: s.name,
+    category: s.category || "Servizi Salone",
+    price: Number(s.price) || 20,
+    durationMinutes: Number(s.durationMinutes || s.duration) || 30,
+    description: s.description || ""
+  }));
+
+  const featuredServices = realServices.slice(0, 3).map((s: any) => ({
     name: s.name,
     price: s.price,
     duration: s.durationMinutes,
   }));
 
-
   const minPrice = realServices.length > 0 
-    ? Math.min(...realServices.map((s) => s.price)) 
+    ? Math.min(...realServices.map((s: any) => s.price)) 
     : 20;
 
   const planBadge = data.planType === "PRO" 
@@ -102,6 +112,7 @@ export function mapUserDocToSalonListing(docId: string, data: any): SalonListing
     featuredServices: featuredServices.length > 0 ? featuredServices : [
       { name: "Taglio Sartoriale", price: minPrice, duration: 30 }
     ],
+    services: realServices.length > 0 ? realServices : undefined,
   };
 }
 
@@ -147,4 +158,28 @@ export async function fetchRealSalonsFromDatabase(): Promise<SalonListing[]> {
   }
 
   return [];
+}
+
+/**
+ * Recupera un singolo salone per ID:
+ * 1. Da Cloud Firestore (documento users/{salonId})
+ * 2. Fallback su INITIAL_SALONS
+ */
+export async function fetchSalonById(salonId: string): Promise<SalonListing | null> {
+  if (!salonId) return null;
+
+  // 1. Prova da Cloud Firestore
+  try {
+    const docRef = doc(db, "users", salonId);
+    const snap = await getDoc(docRef);
+    if (snap.exists()) {
+      return mapUserDocToSalonListing(snap.id, snap.data());
+    }
+  } catch (err) {
+    console.warn("Nota lettura salone per ID da Firestore:", err);
+  }
+
+  // 2. Fallback su saloni predefiniti
+  const fallback = INITIAL_SALONS.find((s) => s.id === salonId);
+  return fallback || null;
 }
