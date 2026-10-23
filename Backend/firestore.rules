@@ -2,12 +2,28 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     match /users/{userId} {
-      // Ogni utente autenticato può scrivere il proprio profilo
-      allow write: if request.auth != null;
-      // Lettura singolo profilo
+      // ─── LETTURA ───
+      // Il proprietario del profilo può sempre leggere il proprio documento
       allow get: if (request.auth != null && request.auth.uid == userId) || resource.data.role == 'salone';
-      // Query / elenco profili salone per marketplace e mappa
+      // Query / elenco: solo profili di tipo salone (marketplace e mappa pubblica)
       allow list: if resource.data.role == 'salone';
+
+      // ─── SCRITTURA (SICURA) ───
+      // REGOLA CRITICA: Solo il proprietario del documento può modificare il proprio profilo
+      allow create: if request.auth != null
+                    && request.auth.uid == userId;
+
+      // Update: solo il proprietario, e NON può modificare i campi di ruolo/piano
+      allow update: if request.auth != null
+                    && request.auth.uid == userId
+                    // Impedisci escalation: il campo 'role' non può essere cambiato dopo la creazione
+                    && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['role']))
+                    // Impedisci cambio piano senza backend: il campo 'planType' è immutabile client-side
+                    && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['planType']));
+
+      // Delete: solo il proprietario può eliminare il proprio account
+      allow delete: if request.auth != null
+                    && request.auth.uid == userId;
     }
 
     // Collezione dei saloni

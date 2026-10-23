@@ -7,6 +7,7 @@ import {
   DEFAULT_NOTIFICATION_SETTINGS
 } from "./notifications-types";
 import { db } from "./firebase";
+import { getAuth } from "firebase/auth";
 import { collection, doc, getDocs, setDoc, query, orderBy, limit, getDoc } from "firebase/firestore";
 
 const STORAGE_LOGS_PREFIX = "trimmy_notif_logs_";
@@ -113,10 +114,21 @@ export async function sendNotification(
   });
 
   try {
-    // 1. Chiamata all'endpoint API Next.js Server-Side
+    // 0. Recupera il token di autenticazione dell'utente corrente
+    const auth = getAuth();
+    const currentUser = auth.currentUser;
+    if (!currentUser) {
+      return { success: false, error: "Utente non autenticato. Effettua il login." };
+    }
+    const idToken = await currentUser.getIdToken();
+
+    // 1. Chiamata all'endpoint API Next.js Server-Side (con autenticazione)
     const response = await fetch("/api/notifications/send", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { 
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${idToken}`
+      },
       body: JSON.stringify({
         tenantId: payload.tenantId,
         salonName: payload.salonName || "Salone",
