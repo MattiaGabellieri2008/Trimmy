@@ -668,7 +668,7 @@ function ImpostazioniContent() {
             <div className="space-y-6 animate-in fade-in duration-300">
               <div>
                 <h3 className="text-lg font-semibold text-zinc-900">Dettagli Salone</h3>
-                <p className="text-sm text-zinc-500">Gestisci i dati pubblici della tua attività che appariranno ai clienti e nella mappa.</p>
+                <p className="text-sm text-zinc-500">Gestisci i dati pubblici della tua attività che appariranno ai clienti nel marketplace.</p>
               </div>
               
               <div className="space-y-4">

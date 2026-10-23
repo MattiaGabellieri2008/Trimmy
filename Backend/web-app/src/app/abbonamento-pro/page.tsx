@@ -273,7 +273,7 @@ export default function AbbonamentoProPage() {
                 </li>
                 <li className="flex items-start gap-2">
                   <Check className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
-                  <span>Presenza sul marketplace clienti Trimmy & Mappa</span>
+                  <span>Presenza sul marketplace clienti Trimmy</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <Check className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
@@ -371,7 +371,7 @@ export default function AbbonamentoProPage() {
                 </li>
                 <li className="flex items-start gap-2">
                   <Check className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-                  <span>Badge &ldquo;Partner PRO&rdquo; in evidenza su Marketplace e Mappa</span>
+                  <span>Badge &ldquo;Partner PRO&rdquo; in evidenza sul Marketplace</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <Check className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />

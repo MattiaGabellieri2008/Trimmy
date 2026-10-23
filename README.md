@@ -1,7 +1,7 @@
 # ✂️ Trimmy — Piattaforma SaaS per Saloni & Portale Marketplace
 
 > **Piattaforma SaaS Multi-Tenant Cloud-Native** per acconciatori, barbieri e centri estetici.  
-> Unisce un potente **gestionale per saloni** (agenda multivista, CRM clienti isolato, statistiche, gestione collaboratori e listini) con un **marketplace e portale di prenotazione per i clienti** (geolocalizzazione, Google Maps interattiva, booking wizard in 4 step, integrazione con calendari e QR code).
+> Unisce un potente **gestionale per saloni** (agenda multivista, CRM clienti isolato, statistiche, gestione collaboratori e listini) con un **marketplace e portale di prenotazione per i clienti** (geolocalizzazione "Vicino a me", booking wizard in 4 step, integrazione con calendari e QR code).
 
 ---
 
@@ -52,8 +52,7 @@ flowchart TD
     end
 
     subgraph "Cliente (B2C)"
-        C_Search[Ricerca & Geolocalizzazione] --> C_Map[Google Maps Interattiva]
-        C_Map --> C_Book[Wizard Prenotazione 4 Step]
+        C_Search[Ricerca & Geolocalizzazione] --> C_Book[Wizard Prenotazione 4 Step]
         C_Book --> C_Area[Area Personale & Storico]
         C_Book --> C_Cal[Google Calendar / .ics]
     end
@@ -120,9 +119,9 @@ flowchart TD
 - **Filtro Geolocalizzato "Vicino a me"**: Calcolo della distanza in km dalla posizione GPS del browser tramite algoritmo Haversine, con riordinamento dinamico dei saloni dal più vicino al più lontano.
 - **Salvataggio Saloni Preferiti**: Salvataggio rapido con icona a cuore persistente nel profilo utente.
 
-### 2. 🗺️ Mappa Interattiva Google Maps
-- **Integrazione Google Maps**: Supporto nativo via API Key Google Maps con visualizzazione in stile stradale pulito.
-- **Fallback Cartografico Interattivo ad Alta Fedeltà**: Se la chiave API Google Maps non è configurata o in assenza di rete esterna, entra in funzione un componente cartografico vettoriale con pin interattivi, zoom, pan e link diretto *"Apri in Google Maps"*.
+### 2. 📍 Geolocalizzazione & Prossimità
+- **Distanza Reale e Algoritmo Haversine**: Calcolo istantaneo dei chilometri di distanza da ciascun salone rispetto alla posizione del cliente.
+- **Ordinamento Intelligente per Distanza**: Ordinamento con un click per visualizzare per primi i saloni più vicini.
 
 ### 3. ✨ Wizard di Prenotazione in 4 Passaggi
 1. **Scelta del Servizio**: Selezione dal listino verificato con prezzi e tempi trasparenti.
@@ -293,13 +292,12 @@ Gestionale saloni/
 │           │   ├── login/page.tsx            # Accesso unificato Google e Email/Password
 │           │   ├── onboarding/page.tsx       # Wizard configurazione iniziale del salone
 │           │   ├── abbonamento-pro/page.tsx  # Flusso di upgrade piano SaaS
-│           │   ├── cliente/page.tsx          # Portale Cliente, Marketplace e Mappa
+│           │   ├── cliente/page.tsx          # Portale Cliente, Marketplace & Storico
 │           │   └── prenota/page.tsx          # Prenotazione diretta via QR Code o link
 │           ├── components/
 │           │   ├── BookingWizardModal.tsx    # Wizard prenotazione in 4 passaggi con info avvisi SMS/WhatsApp
 │           │   ├── ClientSidebar.tsx         # Sidebar navigazione per area cliente
 │           │   ├── HeaderSearch.tsx          # Barra ricerca smart con autocompletamento
-│           │   ├── InteractiveSalonMap.tsx   # Google Maps con fallback vettoriale ad alta fedeltà
 │           │   ├── NotificationBell.tsx      # Centro notifiche in tempo reale
 │           │   ├── ReviewModal.tsx           # Modale recensioni a 5 stelle
 │           │   ├── SalonShareModal.tsx       # Modale condivisione e QR Code
@@ -451,12 +449,12 @@ Trimmy è progettato con pratiche moderne di web design responsive, garantendo s
 - [x] Gestione staff e collaboratori con gating automatico basato sui piani SaaS
 - [x] Invito collaboratori tramite email reale e link rapido WhatsApp
 - [x] Marketplace clienti con geolocalizzazione GPS "Vicino a me"
-- [x] Mappa interattiva Google Maps con fallback cartografico ad alta fedeltà
 - [x] Wizard di prenotazione cliente in 4 passaggi con calcolo slot in tempo reale
 - [x] Sincronizzazione calendari esterni (Google Calendar e download file `.ics`)
 - [x] Generatore di QR Code e link dedicati per il bancone del salone
 - [x] Dashboard statistiche con grafici Recharts su fatturato, clienti e servizi
 - [x] Hosting in produzione su Firebase App Hosting (`europe-west4`)
 - [x] Notifiche SMS / WhatsApp automatiche per conferma, promemoria programmato (12h/24h/48h), cancellazione e richiesta recensioni post-servizio
+- [ ] Mappa Interattiva Google Maps (prevista in upgrade futuro)
 - [ ] Integrazione gateway di pagamento online (Stripe Checkout) per caparra/pagamento anticipato
 - [ ] **Sviluppo Applicazione Mobile Android/iOS** nella cartella `Frontend/` condividente le stesse API Cloud

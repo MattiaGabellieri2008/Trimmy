@@ -17,7 +17,7 @@ import {
 import { ClientAppointmentItem, SalonListing } from "@/lib/client-booking";
 import { parseDateSafe } from "@/lib/date-utils";
 
-export type ClientTabType = "marketplace" | "mappa" | "appuntamenti" | "preferiti" | "profilo";
+export type ClientTabType = "marketplace" | "appuntamenti" | "preferiti" | "profilo";
 
 interface ClientSidebarProps {
   activeTab: ClientTabType;
@@ -51,12 +51,6 @@ export function ClientSidebar({
       label: "Esplora Saloni",
       icon: Compass,
       badge: null
-    },
-    {
-      id: "mappa" as ClientTabType,
-      label: "Mappa Interattiva",
-      icon: MapPin,
-      badge: "Live"
     },
     {
       id: "appuntamenti" as ClientTabType,

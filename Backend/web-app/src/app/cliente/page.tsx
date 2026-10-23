@@ -19,8 +19,6 @@ import {
   QrCode, 
   RotateCcw, 
   Heart, 
-  Map as MapIcon, 
-  Grid, 
   ChevronRight, 
   Trash2, 
   ExternalLink,
@@ -56,7 +54,6 @@ import {
 } from "@/lib/client-booking";
 import { parseDateSafe } from "@/lib/date-utils";
 import { fetchRealSalonsFromDatabase } from "@/lib/salons-service";
-import InteractiveSalonMap from "@/components/InteractiveSalonMap";
 import BookingWizardModal from "@/components/BookingWizardModal";
 import ReviewModal from "@/components/ReviewModal";
 import SalonShareModal from "@/components/SalonShareModal";
@@ -76,7 +73,7 @@ export default function ClientePage() {
   // Lista saloni dal database reale (con fallback se vuoto)
   const [salonsList, setSalonsList] = useState<SalonListing[]>(INITIAL_SALONS);
 
-  // Tab Principale: "marketplace" | "mappa" | "appuntamenti" | "preferiti" | "profilo"
+  // Tab Principale: "marketplace" | "appuntamenti" | "preferiti" | "profilo"
   const [activeTab, setActiveTab] = useState<ClientTabType>("marketplace");
 
   // Filtri e Ricerca Intelligente Marketplace
@@ -85,8 +82,6 @@ export default function ClientePage() {
   const [selectedCategory, setSelectedCategory] = useState<string>("Tutti");
   const [selectedQuickFilter, setSelectedQuickFilter] = useState<string>("all");
   const [sortBy, setSortBy] = useState<SortOption>("rating");
-  const [viewMode, setViewMode] = useState<"grid" | "map">("grid");
-  const [selectedMapSalon, setSelectedMapSalon] = useState<SalonListing | null>(null);
 
   // Geolocalizzazione "Vicino a Me"
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
@@ -492,7 +487,6 @@ export default function ClientePage() {
             <div className="flex items-center gap-2">
               <span className="font-bold text-base sm:text-lg text-zinc-900 tracking-tight capitalize">
                 {activeTab === "marketplace" && "Esplora Saloni & Trattamenti"}
-                {activeTab === "mappa" && "Mappa Interattiva Saloni"}
                 {activeTab === "appuntamenti" && "I Miei Appuntamenti"}
                 {activeTab === "preferiti" && "I Miei Saloni Preferiti"}
                 {activeTab === "profilo" && "Scheda Personale Cliente"}
@@ -551,30 +545,9 @@ export default function ClientePage() {
                     </p>
                   </div>
 
-                  {/* Toggle Elenco vs Mappa Rapido */}
-                  <div className="flex items-center bg-zinc-100 p-1 rounded-xl gap-1 shrink-0 self-start md:self-auto border border-zinc-200">
-                    <button
-                      onClick={() => setViewMode("grid")}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                        viewMode === "grid"
-                          ? "bg-white text-zinc-900 shadow-xs"
-                          : "text-zinc-600 hover:text-zinc-900"
-                      }`}
-                    >
-                      <Grid className="w-3.5 h-3.5" />
-                      <span>Elenco ({filteredSalons.length})</span>
-                    </button>
-                    <button
-                      onClick={() => setViewMode("map")}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                        viewMode === "map"
-                          ? "bg-white text-zinc-900 shadow-xs"
-                          : "text-zinc-600 hover:text-zinc-900"
-                      }`}
-                    >
-                      <MapIcon className="w-3.5 h-3.5" />
-                      <span>Mappa Live</span>
-                    </button>
+                  {/* Conteggio Saloni Disponibili */}
+                  <div className="flex items-center px-3.5 py-1.5 bg-zinc-100 rounded-xl text-xs font-semibold text-zinc-700 shrink-0 self-start md:self-auto border border-zinc-200/80">
+                    <span>{filteredSalons.length} saloni disponibili</span>
                   </div>
                 </div>
 
@@ -712,24 +685,8 @@ export default function ClientePage() {
 
               </div>
 
-              {/* VISTA MAPPA vs VISTA ELENCO */}
-              {viewMode === "map" ? (
-                <div className="space-y-4">
-                  <InteractiveSalonMap
-                    salons={filteredSalons}
-                    selectedSalon={selectedMapSalon}
-                    onSelectSalon={setSelectedMapSalon}
-                    onBookSalon={(s) => {
-                      setActiveBookingSalon(s);
-                      setPreselectedServiceId(undefined);
-                    }}
-                    heightClass="h-[580px]"
-                    userLocation={userLocation}
-                  />
-                </div>
-              ) : (
-                /* VISTA GRIGLIA SALONI ADERENTI */
-                <div className="space-y-4">
+              {/* VISTA GRIGLIA SALONI ADERENTI */}
+              <div className="space-y-4">
                   <div className="flex items-center justify-between text-xs text-zinc-500 font-medium px-1">
                     <span>Trovati <strong>{filteredSalons.length} saloni</strong> aderenti</span>
                     {searchQuery && (
@@ -891,49 +848,7 @@ export default function ClientePage() {
                   )}
 
                 </div>
-              )}
 
-            </div>
-          )}
-
-          {/* ======================= SEZIONE 2: MAPPA INTERATTIVA A TUTTO SCHERMO ======================= */}
-          {activeTab === "mappa" && (
-            <div className="space-y-4 max-w-7xl mx-auto">
-              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-white p-4 rounded-3xl border border-zinc-200/80 shadow-xs">
-                <div>
-                  <h2 className="text-lg font-bold text-zinc-900">Mappa Saloni Certificati</h2>
-                  <p className="text-xs text-zinc-500">
-                    Naviga e trova i saloni partner vicini a te con visualizzazione Google Maps stradale e satellitare.
-                  </p>
-                </div>
-                
-                {/* Selettore Città Mappa */}
-                <div className="flex items-center gap-2 w-full sm:w-auto">
-                  <select
-                    value={selectedCity}
-                    onChange={(e) => setSelectedCity(e.target.value)}
-                    className="px-3 py-1.5 bg-zinc-50 border border-zinc-200 rounded-xl text-xs font-semibold text-zinc-800 focus:outline-none cursor-pointer"
-                  >
-                    {cities.map((city) => (
-                      <option key={city} value={city}>
-                        {city === "Tutte" ? "Tutte le Città" : `📍 ${city}`}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <InteractiveSalonMap
-                salons={filteredSalons}
-                selectedSalon={selectedMapSalon}
-                onSelectSalon={setSelectedMapSalon}
-                onBookSalon={(s) => {
-                  setActiveBookingSalon(s);
-                  setPreselectedServiceId(undefined);
-                }}
-                heightClass="h-[620px]"
-                userLocation={userLocation}
-              />
             </div>
           )}
 

@@ -272,7 +272,7 @@ export async function fetchEffectiveSalonNotifications(userUid: string): Promise
       notifications.push({
         id: setupProfileId,
         title: "Completa profilo Salone",
-        description: "Aggiungi indirizzo e recapito telefonico nelle Impostazioni per apparire sulla mappa clienti.",
+        description: "Aggiungi indirizzo e recapito telefonico nelle Impostazioni per apparire nel marketplace clienti.",
         time: "Profilo",
         type: "system",
         read: readIds.includes(setupProfileId),
