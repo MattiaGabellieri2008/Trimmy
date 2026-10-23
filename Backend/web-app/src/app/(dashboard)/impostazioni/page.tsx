@@ -2,7 +2,7 @@
 
 import { useState, useEffect, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { Settings, Shield, CreditCard, Building, User, Mail, Lock, Plus, Check, X, Loader2, LogOut, Trash2, AlertTriangle, Users, Copy, RotateCw, MessageSquare, Smartphone, Send, Clock, Star, BellRing, Sparkles } from "lucide-react";
+import { Settings, Shield, CreditCard, Building, User, Mail, Lock, Plus, Check, X, Loader2, LogOut, Trash2, AlertTriangle, Users, Copy, RotateCw, MessageSquare, Smartphone, Send, Clock, Star, BellRing, Sparkles, Share2 } from "lucide-react";
 import { auth } from "@/lib/firebase";
 import { onAuthStateChanged, updateProfile, signOut, deleteUser, User as FirebaseUser } from "firebase/auth";
 import { getUserProfile, fetchUserProfile, subscribeUserProfile, updateUserProfile, deleteUserProfile, UserProfile, PlanType } from "@/lib/user-profile";
@@ -24,12 +24,15 @@ import {
   DEFAULT_NOTIFICATION_TEMPLATES
 } from "@/lib/notifications-types";
 import { 
-  getSalonNotificationSettings, 
+  fetchSalonNotificationSettings, 
   saveSalonNotificationSettings, 
   fetchNotificationLogs, 
-  sendNotification, 
-  buildWhatsAppClickToChatUrl 
+  sendNotification 
 } from "@/lib/notifications-service";
+import { 
+  requestPushNotificationPermission, 
+  getPushPermissionStatus 
+} from "@/lib/fcm-client";
 
 type TabType = "profilo" | "salone" | "team" | "notifiche" | "abbonamento";
 
@@ -77,23 +80,31 @@ function ImpostazioniContent() {
   const [deleteError, setDeleteError] = useState("");
   const [isUpgrading, setIsUpgrading] = useState(false);
 
-  // Notifiche SMS & WhatsApp State
+  // Notifiche Firebase Cloud Messaging (FCM) State
   const [notifSettings, setNotifSettings] = useState<NotificationSettings>(DEFAULT_NOTIFICATION_SETTINGS);
   const [notifLogs, setNotifLogs] = useState<NotificationLogItem[]>([]);
   const [isLoadingNotifs, setIsLoadingNotifs] = useState(false);
   const [savingNotifSettings, setSavingNotifSettings] = useState(false);
   const [notifSaveMsg, setNotifSaveMsg] = useState("");
-  const [selectedTemplateTab, setSelectedTemplateTab] = useState<"confirmation" | "reminder" | "cancellation" | "reviewRequest">("confirmation");
-  const [testPhoneNumber, setTestPhoneNumber] = useState("");
-  const [testChannel, setTestChannel] = useState<"WHATSAPP" | "SMS">("WHATSAPP");
+  const [selectedTemplateTab, setSelectedTemplateTab] = useState<"confirmation" | "reminder" | "cancellation" | "reviewRequest" | "marketing">("confirmation");
+  const [testPushTitle, setTestPushTitle] = useState("🔔 Prova Notifica Trimmy");
+  const [testPushBody, setTestPushBody] = useState("Questo è un messaggio di test inviato tramite Firebase Cloud Messaging.");
   const [isSendingTest, setIsSendingTest] = useState(false);
   const [testResultMsg, setTestResultMsg] = useState<{ success: boolean; text: string } | null>(null);
+  const [pushPermission, setPushPermission] = useState<string>("default");
+  const [isEnablingPush, setIsEnablingPush] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      setPushPermission(getPushPermissionStatus());
+    }
+  }, []);
 
   const loadNotificationData = async (tid: string) => {
     setIsLoadingNotifs(true);
     try {
       const [settings, logs] = await Promise.all([
-        getSalonNotificationSettings(tid),
+        fetchSalonNotificationSettings(tid),
         fetchNotificationLogs(tid)
       ]);
       setNotifSettings(settings);
@@ -105,6 +116,25 @@ function ImpostazioniContent() {
     }
   };
 
+  const handleEnablePush = async () => {
+    if (!currentUser) return;
+    setIsEnablingPush(true);
+    try {
+      const res = await requestPushNotificationPermission(currentUser.uid);
+      if (res.success && res.token) {
+        setPushPermission("granted");
+        setTestResultMsg({ success: true, text: "Notifiche Push abilitate con successo su questo dispositivo! Token registrato su Firebase." });
+      } else {
+        setPushPermission(getPushPermissionStatus());
+        setTestResultMsg({ success: false, text: res.error || "Impossibile abilitare le notifiche push." });
+      }
+    } catch (err: any) {
+      setTestResultMsg({ success: false, text: err.message || "Errore attivazione notifiche push." });
+    } finally {
+      setIsEnablingPush(false);
+    }
+  };
+
   const handleSaveNotifSettings = async () => {
     if (!currentUser) return;
     setSavingNotifSettings(true);
@@ -112,7 +142,7 @@ function ImpostazioniContent() {
     try {
       const tid = getSalonTenantId(currentUser.uid);
       await saveSalonNotificationSettings(tid, notifSettings);
-      setNotifSaveMsg("Impostazioni notifiche salvate con successo!");
+      setNotifSaveMsg("Impostazioni notifiche Firebase salvate con successo!");
       setTimeout(() => setNotifSaveMsg(""), 3500);
     } catch (e: any) {
       setNotifSaveMsg("Errore durante il salvataggio.");
@@ -123,10 +153,6 @@ function ImpostazioniContent() {
 
   const handleSendTestNotification = async () => {
     if (!currentUser) return;
-    if (!testPhoneNumber.trim()) {
-      setTestResultMsg({ success: false, text: "Inserisci un numero di cellulare per il test." });
-      return;
-    }
     setIsSendingTest(true);
     setTestResultMsg(null);
     try {
@@ -135,25 +161,26 @@ function ImpostazioniContent() {
       const res = await sendNotification({
         tenantId: tid,
         salonName: sName,
-        customerName: "Test Trimmy",
-        customerPhone: testPhoneNumber,
+        customerName: "Dispositivo Salone",
         type: "TEST",
-        channel: testChannel
+        channel: "PUSH_FCM",
+        title: testPushTitle,
+        customMessage: testPushBody
       });
       if (res.success) {
         setTestResultMsg({
           success: true,
           text: res.simulated
-            ? `Notifica di prova simulata con successo per ${testPhoneNumber}! (Registrata nel log sottostante)`
-            : `Messaggio ${testChannel} inviato con successo al numero ${testPhoneNumber}!`
+            ? `Notifica di prova simulata con successo! (Registrata nel log Firebase FCM sottostante)`
+            : `Notifica Push Firebase Cloud Messaging inviata con successo! ID: ${res.messageId || "fcm-ok"}`
         });
         const updatedLogs = await fetchNotificationLogs(tid);
         setNotifLogs(updatedLogs);
       } else {
-        setTestResultMsg({ success: false, text: res.error || "Impossibile inviare il messaggio di test." });
+        setTestResultMsg({ success: false, text: res.error || "Impossibile inviare la notifica di test." });
       }
     } catch (err: any) {
-      setTestResultMsg({ success: false, text: err.message || "Errore durante l'invio del test." });
+      setTestResultMsg({ success: false, text: err.message || "Errore durante l'invio del test FCM." });
     } finally {
       setIsSendingTest(false);
     }
@@ -233,7 +260,7 @@ function ImpostazioniContent() {
           email: user.email || ""
         }).then(setStaffList).catch(console.error);
 
-        // Carica impostazioni e log notifiche SMS/WhatsApp
+        // Carica impostazioni e log notifiche Firebase Cloud Messaging (FCM)
         loadNotificationData(tid).catch(console.error);
 
         // Determina il provider di autenticazione
@@ -339,7 +366,7 @@ function ImpostazioniContent() {
       if (res.emailSentSuccessfully) {
         setInviteSuccessMsg(`Invito inviato con successo! Un'email reale di attivazione con il link di accesso a Trimmy è stata recapitata a ${inviteEmail}.`);
       } else {
-        setInviteSuccessMsg(`Collaboratore registrato nel team! Puoi copiare il link di invito qui sotto o condividerlo direttamente su WhatsApp.`);
+        setInviteSuccessMsg(`Collaboratore registrato nel team! Puoi copiare il link di invito qui sotto o condividerlo con il collaboratore.`);
       }
 
       await loadTeamStaff();
@@ -514,8 +541,8 @@ function ImpostazioniContent() {
               }}
               className={`flex items-center gap-2 sm:gap-3 px-3.5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors text-left shrink-0 whitespace-nowrap ${activeTab === "notifiche" ? "bg-zinc-100 text-zinc-900 font-semibold" : "text-zinc-500 hover:text-zinc-900 hover:bg-zinc-50"}`}
             >
-              <MessageSquare className="w-4 h-4 text-emerald-600" />
-              Notifiche & SMS
+              <BellRing className="w-4 h-4 text-indigo-600" />
+              Notifiche Push (FCM)
             </button>
             <button
               onClick={() => setActiveTab("abbonamento")}
@@ -909,17 +936,17 @@ function ImpostazioniContent() {
           )}
 
 
-          {/* TAB: NOTIFICHE & SMS */}
+          {/* TAB: NOTIFICHE PUSH & FIREBASE CLOUD MESSAGING (FCM) */}
           {activeTab === "notifiche" && (
             <div className="space-y-6 animate-in fade-in duration-300">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <div>
                   <h3 className="text-lg font-semibold text-zinc-900 flex items-center gap-2">
-                    <MessageSquare className="w-5 h-5 text-emerald-600" />
-                    Notifiche SMS & WhatsApp
+                    <BellRing className="w-5 h-5 text-indigo-600" />
+                    Notifiche Push & Firebase Cloud Messaging (FCM)
                   </h3>
                   <p className="text-sm text-zinc-500">
-                    Invia promemoria automatici, conferme istantanee e richieste recensioni ai tuoi clienti.
+                    Notifiche push istantanee per clienti e collaboratori, governate dall&apos;infrastruttura Google Firebase.
                   </p>
                 </div>
                 <button
@@ -944,120 +971,123 @@ function ImpostazioniContent() {
                 </div>
               )}
 
-              {/* Box Riepilogo Crediti Mensili & Piano */}
-              {(() => {
-                const planType = userProfile?.planType || (userProfile?.staffCount && userProfile.staffCount > 3 ? "PRO" : userProfile?.staffCount && userProfile.staffCount > 1 ? "MEDIUM" : "FREE");
-                const planCredits = PLAN_NOTIFICATION_CREDITS[planType] || 0;
-                const usedCredits = notifLogs.filter(l => l.status === "SENT" || l.status === "SIMULATED").length;
-                const percentUsed = planCredits > 0 ? Math.min(100, Math.round((usedCredits / planCredits) * 100)) : (usedCredits > 0 ? 100 : 0);
-
-                return (
-                  <div className="bg-zinc-50/80 border border-zinc-200/80 rounded-2xl p-5 space-y-4">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                      <div>
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider bg-zinc-200 text-zinc-800 mb-1.5">
-                          Piano {planType === "FREE" ? "Starter" : planType} • Quota Notifiche
-                        </span>
-                        <h4 className="text-xl font-bold text-zinc-900">
-                          {planType === "FREE" ? (
-                            <span>0 Crediti Automatici <span className="text-xs font-normal text-zinc-500">(WhatsApp 1-click illimitato gratuito)</span></span>
-                          ) : (
-                            <span>{usedCredits} / {planCredits} <span className="text-sm font-normal text-zinc-500">messaggi inviati questo mese</span></span>
-                          )}
-                        </h4>
-                      </div>
-                      {planType === "FREE" ? (
-                        <button
-                          type="button"
-                          onClick={() => setActiveTab("abbonamento")}
-                          className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold transition-colors shadow-xs cursor-pointer flex items-center gap-1.5 self-start sm:self-auto"
-                        >
-                          <Sparkles className="w-3.5 h-3.5" />
-                          Passa a Medium (50 SMS/m) o Pro
-                        </button>
-                      ) : (
-                        <div className="text-right">
-                          <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-                            Invio Automatico Attivo
-                          </span>
-                        </div>
-                      )}
+              {/* Banner Governatore Firebase Cloud Messaging */}
+              <div className="bg-gradient-to-r from-amber-500/10 via-orange-500/10 to-indigo-500/10 border border-amber-200/80 rounded-2xl p-5 space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center font-bold shadow-xs">
+                      <Sparkles className="w-5 h-5" />
                     </div>
-
-                    {planType !== "FREE" && (
-                      <div className="space-y-1.5">
-                        <div className="w-full bg-zinc-200 rounded-full h-2 overflow-hidden">
-                          <div
-                            className={`h-full transition-all duration-500 ${percentUsed > 85 ? "bg-rose-500" : percentUsed > 60 ? "bg-amber-500" : "bg-emerald-500"}`}
-                            style={{ width: `${percentUsed}%` }}
-                          />
-                        </div>
-                        <div className="flex justify-between text-[11px] text-zinc-400">
-                          <span>{percentUsed}% consumato</span>
-                          <span>{Math.max(0, planCredits - usedCredits)} messaggi rimanenti</span>
-                        </div>
-                      </div>
-                    )}
+                    <div>
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-amber-200/80 text-amber-900 mb-0.5">
+                        Infrastruttura Attiva • Google Firebase FCM
+                      </span>
+                      <h4 className="text-base font-bold text-zinc-900">
+                        Governato da Firebase Cloud Messaging
+                      </h4>
+                    </div>
                   </div>
-                );
-              })()}
 
-              {/* Canali di Invio Abilitati */}
+                  <a
+                    href="https://console.firebase.google.com/project/gestionale-saloni/notification/compose"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-zinc-900 hover:bg-zinc-800 text-white rounded-xl text-xs font-semibold transition-colors shadow-xs cursor-pointer self-start sm:self-auto"
+                  >
+                    <span>Apri Console Firebase FCM</span>
+                    <span className="text-[10px]">↗</span>
+                  </a>
+                </div>
+
+                <p className="text-xs text-zinc-600 leading-relaxed">
+                  Tutte le notifiche vengono inoltrate tramite il protocollo <strong>FCM di Google</strong> direttamente su smartphone, tablet e browser desktop dei clienti e dello staff. Puoi inviare comunicazioni massive, annunci e promozioni con titolo, testo e immagini sia da questa dashboard sia direttamente dal pannello <em>Cloud Messaging</em> della console Firebase.
+                </p>
+              </div>
+
+              {/* Box Stato Notifiche Push del Dispositivo Attuale */}
+              <div className="p-4 bg-zinc-50 border border-zinc-200/80 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="space-y-0.5">
+                  <p className="text-xs font-semibold text-zinc-900 flex items-center gap-2">
+                    <Smartphone className="w-4 h-4 text-zinc-700" />
+                    Ricezione Notifiche Push su questo Dispositivo
+                  </p>
+                  <p className="text-xs text-zinc-500">
+                    Stato autorizzazione browser:{" "}
+                    <span className={`font-semibold ${pushPermission === "granted" ? "text-emerald-600" : pushPermission === "denied" ? "text-rose-600" : "text-amber-600"}`}>
+                      {pushPermission === "granted" ? "Attivo & Autorizzato ✅" : pushPermission === "denied" ? "Bloccato dal browser ❌" : "In attesa di attivazione ⚠️"}
+                    </span>
+                  </p>
+                </div>
+
+                {pushPermission !== "granted" && (
+                  <button
+                    type="button"
+                    onClick={handleEnablePush}
+                    disabled={isEnablingPush}
+                    className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold transition-colors flex items-center justify-center gap-1.5 shadow-xs cursor-pointer disabled:opacity-50 shrink-0"
+                  >
+                    {isEnablingPush ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <BellRing className="w-3.5 h-3.5" />}
+                    Attiva Notifiche Push
+                  </button>
+                )}
+              </div>
+
+              {/* Canali di Notifica Abilitati */}
               <div>
                 <h4 className="text-xs font-semibold text-zinc-700 uppercase tracking-wider mb-3">
-                  Canali di Comunicazione
+                  Canali Firebase Abilitati
                 </h4>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {/* WhatsApp */}
-                  <div className={`p-4 rounded-xl border transition-all ${notifSettings.enabledChannels.whatsapp ? "bg-emerald-50/40 border-emerald-300" : "bg-zinc-50 border-zinc-200"}`}>
+                  {/* Push Notifications FCM */}
+                  <div className={`p-4 rounded-xl border transition-all ${notifSettings.enabledChannels.pushFcm ? "bg-indigo-50/40 border-indigo-300" : "bg-zinc-50 border-zinc-200"}`}>
                     <div className="flex items-start justify-between">
                       <div className="flex items-center gap-2.5">
-                        <div className="w-9 h-9 rounded-lg bg-emerald-600 text-white flex items-center justify-center font-bold text-sm shadow-xs">
-                          WA
+                        <div className="w-9 h-9 rounded-lg bg-indigo-600 text-white flex items-center justify-center font-bold text-sm shadow-xs">
+                          <BellRing className="w-4 h-4" />
                         </div>
                         <div>
-                          <p className="text-sm font-semibold text-zinc-900">WhatsApp Business</p>
-                          <p className="text-xs text-zinc-500">Tasso di apertura ~98% con link cliccabili</p>
+                          <p className="text-sm font-semibold text-zinc-900">Notifiche Push FCM</p>
+                          <p className="text-xs text-zinc-500">Istantanee su smartphone, tablet e PC</p>
                         </div>
                       </div>
                       <label className="relative inline-flex items-center cursor-pointer">
                         <input
                           type="checkbox"
-                          checked={notifSettings.enabledChannels.whatsapp}
+                          checked={notifSettings.enabledChannels.pushFcm}
                           onChange={(e) => setNotifSettings({
                             ...notifSettings,
-                            enabledChannels: { ...notifSettings.enabledChannels, whatsapp: e.target.checked }
+                            enabledChannels: { ...notifSettings.enabledChannels, pushFcm: e.target.checked }
                           })}
                           className="sr-only peer"
                         />
-                        <div className="w-9 h-5 bg-zinc-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-600"></div>
+                        <div className="w-9 h-5 bg-zinc-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
                       </label>
                     </div>
                   </div>
 
-                  {/* SMS */}
-                  <div className={`p-4 rounded-xl border transition-all ${notifSettings.enabledChannels.sms ? "bg-blue-50/40 border-blue-300" : "bg-zinc-50 border-zinc-200"}`}>
+                  {/* Notifiche In-App */}
+                  <div className={`p-4 rounded-xl border transition-all ${notifSettings.enabledChannels.inApp ? "bg-emerald-50/40 border-emerald-300" : "bg-zinc-50 border-zinc-200"}`}>
                     <div className="flex items-start justify-between">
                       <div className="flex items-center gap-2.5">
-                        <div className="w-9 h-9 rounded-lg bg-blue-600 text-white flex items-center justify-center font-bold text-sm shadow-xs">
-                          SMS
+                        <div className="w-9 h-9 rounded-lg bg-emerald-600 text-white flex items-center justify-center font-bold text-sm shadow-xs">
+                          <Check className="w-4 h-4" />
                         </div>
                         <div>
-                          <p className="text-sm font-semibold text-zinc-900">SMS Tradizionale</p>
-                          <p className="text-xs text-zinc-500">Consegna garantita anche senza connessione dati</p>
+                          <p className="text-sm font-semibold text-zinc-900">Centro Notifiche In-App</p>
+                          <p className="text-xs text-zinc-500">Badge e avvisi nel gestionale</p>
                         </div>
                       </div>
                       <label className="relative inline-flex items-center cursor-pointer">
                         <input
                           type="checkbox"
-                          checked={notifSettings.enabledChannels.sms}
+                          checked={notifSettings.enabledChannels.inApp}
                           onChange={(e) => setNotifSettings({
                             ...notifSettings,
-                            enabledChannels: { ...notifSettings.enabledChannels, sms: e.target.checked }
+                            enabledChannels: { ...notifSettings.enabledChannels, inApp: e.target.checked }
                           })}
                           className="sr-only peer"
                         />
-                        <div className="w-9 h-5 bg-zinc-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
+                        <div className="w-9 h-5 bg-zinc-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-600"></div>
                       </label>
                     </div>
                   </div>
@@ -1171,120 +1201,99 @@ function ImpostazioniContent() {
                 </div>
               </div>
 
-              {/* Personalizzazione Template Messaggi */}
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-xs font-semibold text-zinc-700 uppercase tracking-wider">
-                    Template & Testo Messaggi
-                  </h4>
-                  <span className="text-[11px] text-zinc-400">Variabili: {"{cliente}, {salone}, {servizio}, {operatore}, {data}, {ora}, {link}"}</span>
-                </div>
+              {/* Personalizzazione Testi Notifiche Push */}
+              <div>
+                <h4 className="text-xs font-semibold text-zinc-700 uppercase tracking-wider mb-2">
+                  Testi Notifiche Push Personalizzati
+                </h4>
+                <div className="border border-zinc-200/80 rounded-2xl overflow-hidden bg-white shadow-2xs">
+                  <div className="flex border-b border-zinc-100 bg-zinc-50/70 overflow-x-auto">
+                    {[
+                      { key: "confirmation", label: "Conferma" },
+                      { key: "reminder", label: "Promemoria" },
+                      { key: "cancellation", label: "Cancellazione" },
+                      { key: "reviewRequest", label: "Recensione" },
+                      { key: "marketing", label: "Novità / Promo" }
+                    ].map((tab) => (
+                      <button
+                        key={tab.key}
+                        type="button"
+                        onClick={() => setSelectedTemplateTab(tab.key as any)}
+                        className={`px-4 py-2.5 text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap border-b-2 ${
+                          selectedTemplateTab === tab.key
+                            ? "border-zinc-900 text-zinc-900 bg-white"
+                            : "border-transparent text-zinc-500 hover:text-zinc-800"
+                        }`}
+                      >
+                        {tab.label}
+                      </button>
+                    ))}
+                  </div>
 
-                <div className="flex gap-2 border-b border-zinc-200/80 pb-2 overflow-x-auto text-xs font-medium">
-                  <button
-                    type="button"
-                    onClick={() => setSelectedTemplateTab("confirmation")}
-                    className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer whitespace-nowrap ${selectedTemplateTab === "confirmation" ? "bg-zinc-900 text-white font-semibold" : "text-zinc-600 hover:bg-zinc-100"}`}
-                  >
-                    Conferma
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedTemplateTab("reminder")}
-                    className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer whitespace-nowrap ${selectedTemplateTab === "reminder" ? "bg-zinc-900 text-white font-semibold" : "text-zinc-600 hover:bg-zinc-100"}`}
-                  >
-                    Promemoria
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedTemplateTab("cancellation")}
-                    className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer whitespace-nowrap ${selectedTemplateTab === "cancellation" ? "bg-zinc-900 text-white font-semibold" : "text-zinc-600 hover:bg-zinc-100"}`}
-                  >
-                    Cancellazione
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedTemplateTab("reviewRequest")}
-                    className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer whitespace-nowrap ${selectedTemplateTab === "reviewRequest" ? "bg-zinc-900 text-white font-semibold" : "text-zinc-600 hover:bg-zinc-100"}`}
-                  >
-                    Recensione
-                  </button>
-                </div>
-
-                <div>
-                  <textarea
-                    rows={3}
-                    value={notifSettings.customTemplates[selectedTemplateTab] || DEFAULT_NOTIFICATION_TEMPLATES[selectedTemplateTab === "confirmation" ? "CONFIRMATION" : selectedTemplateTab === "reminder" ? "REMINDER" : selectedTemplateTab === "cancellation" ? "CANCELLATION" : "REVIEW_REQUEST"]}
-                    onChange={(e) => {
-                      setNotifSettings({
+                  <div className="p-4 space-y-3">
+                    <textarea
+                      rows={3}
+                      value={notifSettings.customTemplates[selectedTemplateTab] || DEFAULT_NOTIFICATION_TEMPLATES[selectedTemplateTab === "confirmation" ? "CONFIRMATION" : selectedTemplateTab === "reminder" ? "REMINDER" : selectedTemplateTab === "cancellation" ? "CANCELLATION" : selectedTemplateTab === "reviewRequest" ? "REVIEW_REQUEST" : "MARKETING"]}
+                      onChange={(e) => setNotifSettings({
                         ...notifSettings,
                         customTemplates: {
                           ...notifSettings.customTemplates,
                           [selectedTemplateTab]: e.target.value
                         }
-                      });
-                    }}
-                    className="w-full p-3 bg-zinc-50 border border-zinc-200 rounded-xl text-xs sm:text-sm text-zinc-800 font-mono focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:bg-white resize-none"
-                  />
-                  <div className="flex justify-between items-center mt-1 text-[11px] text-zinc-400">
-                    <span>Salva per rendere effettive le modifiche su tutte le nuove notifiche.</span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const defaultVal = DEFAULT_NOTIFICATION_TEMPLATES[selectedTemplateTab === "confirmation" ? "CONFIRMATION" : selectedTemplateTab === "reminder" ? "REMINDER" : selectedTemplateTab === "cancellation" ? "CANCELLATION" : "REVIEW_REQUEST"];
-                        setNotifSettings({
-                          ...notifSettings,
-                          customTemplates: {
-                            ...notifSettings.customTemplates,
-                            [selectedTemplateTab]: defaultVal
-                          }
-                        });
-                      }}
-                      className="text-zinc-500 hover:text-zinc-800 underline cursor-pointer"
-                    >
-                      Ripristina predefinito
-                    </button>
+                      })}
+                      className="w-full p-3 bg-zinc-50 border border-zinc-200 rounded-xl text-xs sm:text-sm text-zinc-900 outline-none focus:ring-2 focus:ring-zinc-900 font-mono"
+                    />
+                    <div className="flex flex-wrap gap-1.5 text-[11px] text-zinc-400">
+                      <span>Variabili dinamiche:</span>
+                      <code className="px-1.5 py-0.5 bg-zinc-100 rounded text-zinc-700 font-mono">{"{cliente}"}</code>
+                      <code className="px-1.5 py-0.5 bg-zinc-100 rounded text-zinc-700 font-mono">{"{salone}"}</code>
+                      <code className="px-1.5 py-0.5 bg-zinc-100 rounded text-zinc-700 font-mono">{"{servizio}"}</code>
+                      <code className="px-1.5 py-0.5 bg-zinc-100 rounded text-zinc-700 font-mono">{"{operatore}"}</code>
+                      <code className="px-1.5 py-0.5 bg-zinc-100 rounded text-zinc-700 font-mono">{"{data}"}</code>
+                      <code className="px-1.5 py-0.5 bg-zinc-100 rounded text-zinc-700 font-mono">{"{ora}"}</code>
+                    </div>
                   </div>
                 </div>
               </div>
 
-              {/* Box di Prova / Test Notifica */}
+              {/* Box di Prova / Test Notifica Push Firebase */}
               <div className="p-4 bg-zinc-50 border border-zinc-200/80 rounded-2xl space-y-3">
                 <div className="flex items-center gap-2">
                   <Smartphone className="w-4 h-4 text-zinc-700" />
                   <h4 className="text-xs font-semibold text-zinc-900 uppercase tracking-wider">
-                    Invia un Messaggio di Prova
+                    Invia una Notifica Push di Prova via FCM
                   </h4>
                 </div>
                 <p className="text-xs text-zinc-500">
-                  Verifica subito la ricezione del messaggio inviandolo al tuo numero di cellulare.
+                  Verifica subito l&apos;invio e la ricezione immediata tramite Firebase Cloud Messaging.
                 </p>
 
-                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+                <div className="space-y-2">
                   <input
-                    type="tel"
-                    value={testPhoneNumber}
-                    onChange={(e) => setTestPhoneNumber(e.target.value)}
-                    placeholder="+39 333 1234567"
-                    className="flex-1 px-3 py-2 bg-white border border-zinc-200 rounded-xl text-xs sm:text-sm text-zinc-900 outline-none focus:ring-2 focus:ring-zinc-900"
+                    type="text"
+                    value={testPushTitle}
+                    onChange={(e) => setTestPushTitle(e.target.value)}
+                    placeholder="Titolo notifica (es: 🔔 Nuovo Annuncio)"
+                    className="w-full px-3 py-2 bg-white border border-zinc-200 rounded-xl text-xs sm:text-sm text-zinc-900 outline-none focus:ring-2 focus:ring-zinc-900"
                   />
-                  <select
-                    value={testChannel}
-                    onChange={(e) => setTestChannel(e.target.value as any)}
-                    className="px-3 py-2 bg-white border border-zinc-200 rounded-xl text-xs sm:text-sm font-medium text-zinc-700 outline-none"
-                  >
-                    <option value="WHATSAPP">WhatsApp</option>
-                    <option value="SMS">SMS</option>
-                  </select>
-                  <button
-                    type="button"
-                    disabled={isSendingTest}
-                    onClick={handleSendTestNotification}
-                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold transition-colors flex items-center justify-center gap-1.5 shadow-xs disabled:opacity-50 cursor-pointer"
-                  >
-                    {isSendingTest ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-                    Invia Prova
-                  </button>
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+                    <input
+                      type="text"
+                      value={testPushBody}
+                      onChange={(e) => setTestPushBody(e.target.value)}
+                      placeholder="Testo del messaggio push"
+                      className="flex-1 px-3 py-2 bg-white border border-zinc-200 rounded-xl text-xs sm:text-sm text-zinc-900 outline-none focus:ring-2 focus:ring-zinc-900"
+                    />
+                    <button
+                      type="button"
+                      disabled={isSendingTest}
+                      onClick={handleSendTestNotification}
+                      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold transition-colors flex items-center justify-center gap-1.5 shadow-xs disabled:opacity-50 cursor-pointer"
+                    >
+                      {isSendingTest ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                      Invia Push FCM
+                    </button>
+                  </div>
                 </div>
 
                 {testResultMsg && (
@@ -1294,19 +1303,19 @@ function ImpostazioniContent() {
                 )}
               </div>
 
-              {/* Registro Notifiche Recenti */}
+              {/* Registro Notifiche Recenti (FCM) */}
               <div className="space-y-3 pt-2">
                 <div className="flex items-center justify-between">
                   <h4 className="text-xs font-semibold text-zinc-700 uppercase tracking-wider flex items-center gap-1.5">
                     <Clock className="w-3.5 h-3.5 text-zinc-500" />
-                    Registro Invii Recenti
+                    Registro Invii Firebase Cloud Messaging
                   </h4>
-                  <span className="text-[11px] text-zinc-400">Ultimi {notifLogs.length} eventi</span>
+                  <span className="text-[11px] text-zinc-400">Ultimi {notifLogs.length} eventi registrati</span>
                 </div>
 
                 {notifLogs.length === 0 ? (
                   <div className="p-8 text-center text-xs text-zinc-400 border border-dashed border-zinc-200 rounded-xl bg-zinc-50/50">
-                    Nessun messaggio inviato di recente. Le notifiche inviate ai clienti compariranno qui in tempo reale.
+                    Nessuna notifica inviata di recente. Gli eventi e gli avvisi push compariranno qui in tempo reale.
                   </div>
                 ) : (
                   <div className="border border-zinc-200/70 rounded-xl overflow-hidden bg-white shadow-2xs">
@@ -1315,11 +1324,10 @@ function ImpostazioniContent() {
                         <thead className="bg-zinc-50 border-b border-zinc-200/60 text-zinc-500 font-semibold uppercase text-[10px] tracking-wider">
                           <tr>
                             <th className="px-4 py-2.5">Data & Ora</th>
-                            <th className="px-4 py-2.5">Destinatario</th>
+                            <th className="px-4 py-2.5">Destinatario / Topic</th>
                             <th className="px-4 py-2.5">Canale</th>
                             <th className="px-4 py-2.5">Tipo Evento</th>
-                            <th className="px-4 py-2.5">Stato</th>
-                            <th className="px-4 py-2.5 text-right">Azione</th>
+                            <th className="px-4 py-2.5">Stato FCM</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-zinc-100">
@@ -1335,32 +1343,22 @@ function ImpostazioniContent() {
                                 </td>
                                 <td className="px-4 py-2.5 font-medium text-zinc-900 whitespace-nowrap">
                                   {log.customerName}
-                                  <span className="block text-[11px] text-zinc-400 font-normal">{log.customerPhone}</span>
+                                  {log.customerPhone && (
+                                    <span className="block text-[11px] text-zinc-400 font-normal">{log.customerPhone}</span>
+                                  )}
                                 </td>
                                 <td className="px-4 py-2.5 whitespace-nowrap">
-                                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${log.channel === "WHATSAPP" ? "bg-emerald-100 text-emerald-800" : "bg-blue-100 text-blue-800"}`}>
-                                    {log.channel}
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 text-indigo-800">
+                                    PUSH FCM
                                   </span>
                                 </td>
                                 <td className="px-4 py-2.5 text-zinc-600 whitespace-nowrap">
-                                  {log.type === "CONFIRMATION" ? "Conferma" : log.type === "REMINDER" ? "Promemoria" : log.type === "CANCELLATION" ? "Cancellazione" : log.type === "REVIEW_REQUEST" ? "Recensione" : "Test"}
+                                  {log.type === "CONFIRMATION" ? "Conferma" : log.type === "REMINDER" ? "Promemoria" : log.type === "CANCELLATION" ? "Cancellazione" : log.type === "REVIEW_REQUEST" ? "Recensione" : "Test Push"}
                                 </td>
                                 <td className="px-4 py-2.5 whitespace-nowrap">
-                                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${log.status === "SENT" || log.status === "DELIVERED" ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : log.status === "SIMULATED" ? "bg-amber-50 text-amber-700 border border-amber-200" : "bg-rose-50 text-rose-700 border border-rose-200"}`}>
-                                    {log.status === "SIMULATED" ? "Simulato (Sandbox)" : log.status === "SENT" ? "Inviato" : log.status}
+                                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${log.status === "SENT" || log.status === "DELIVERED" ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : log.status === "SIMULATED" ? "bg-indigo-50 text-indigo-700 border border-indigo-200" : "bg-rose-50 text-rose-700 border border-rose-200"}`}>
+                                    {log.status === "SIMULATED" ? "FCM Registrato" : log.status === "SENT" ? "Inviato FCM" : log.status}
                                   </span>
-                                </td>
-                                <td className="px-4 py-2.5 text-right whitespace-nowrap">
-                                  {log.customerPhone && (
-                                    <a
-                                      href={buildWhatsAppClickToChatUrl(log.customerPhone, log.message)}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 hover:text-emerald-800 hover:underline"
-                                    >
-                                      Apri Chat 💬
-                                    </a>
-                                  )}
                                 </td>
                               </tr>
                             );
@@ -1574,14 +1572,26 @@ function ImpostazioniContent() {
                         {copiedInviteUrl ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
                         {copiedInviteUrl ? "Link Copiato!" : "Copia Link Diretto"}
                       </button>
-                      <a
-                        href={`https://wa.me/?text=${encodeURIComponent(`Ciao! Ti ho aggiunto al team del salone "${userProfile?.salonName || salonName || "Trimmy"}". Clicca qui per completare l'accesso ed entrare nella tua area staff: ${lastInviteUrl}`)}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="px-3 py-1.5 bg-white text-emerald-800 border border-emerald-300 rounded-lg text-xs font-semibold hover:bg-emerald-100 transition-colors flex items-center gap-1.5 shadow-xs"
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (navigator.share && lastInviteUrl) {
+                            navigator.share({
+                              title: `Invito Team - ${userProfile?.salonName || salonName || "Trimmy"}`,
+                              text: `Ciao! Ti ho aggiunto al team del salone "${userProfile?.salonName || salonName || "Trimmy"}". Clicca qui per completare l'accesso:`,
+                              url: lastInviteUrl
+                            }).catch(() => {});
+                          } else if (lastInviteUrl) {
+                            navigator.clipboard.writeText(lastInviteUrl);
+                            setCopiedInviteUrl(true);
+                            setTimeout(() => setCopiedInviteUrl(false), 2500);
+                          }
+                        }}
+                        className="px-3 py-1.5 bg-white text-emerald-800 border border-emerald-300 rounded-lg text-xs font-semibold hover:bg-emerald-100 transition-colors flex items-center gap-1.5 shadow-xs cursor-pointer"
                       >
-                        Condividi su WhatsApp 💬
-                      </a>
+                        <Share2 className="w-3.5 h-3.5" />
+                        Condividi Link Invito
+                      </button>
                     </div>
                   )}
                 </div>

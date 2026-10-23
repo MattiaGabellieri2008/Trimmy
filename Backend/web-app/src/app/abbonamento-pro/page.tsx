@@ -379,7 +379,7 @@ export default function AbbonamentoProPage() {
                 </li>
                 <li className="flex items-start gap-2">
                   <Check className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-                  <span>Assistenza e supporto prioritario WhatsApp dedicato 24/7</span>
+                  <span>Assistenza prioritaria dedicata & Notifiche Push Firebase Cloud Messaging illimitate</span>
                 </li>
               </ul>
             </div>

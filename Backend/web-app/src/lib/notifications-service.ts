@@ -14,7 +14,7 @@ const STORAGE_LOGS_PREFIX = "trimmy_notif_logs_";
 const STORAGE_SETTINGS_PREFIX = "trimmy_notif_settings_";
 
 /**
- * Pulisce e normalizza il recapito telefonico (standard internazionale per Italia +39)
+ * Pulisce e normalizza il recapito telefonico (standard internazionale)
  */
 export function normalizePhoneNumber(rawPhone: string): string {
   if (!rawPhone) return "";
@@ -24,23 +24,11 @@ export function normalizePhoneNumber(rawPhone: string): string {
     cleaned = "+" + cleaned.slice(2);
   }
 
-  // Se è un cellulare italiano che inizia con 3 (9 o 10 cifre) senza prefisso internazionale
   if (/^3\d{8,9}$/.test(cleaned)) {
     cleaned = "+39" + cleaned;
   }
 
   return cleaned;
-}
-
-/**
- * Genera il link universale Click-to-Chat di WhatsApp (wa.me)
- * Funziona su qualsiasi dispositivo senza costi API
- */
-export function buildWhatsAppClickToChatUrl(phone: string, text: string): string {
-  const norm = normalizePhoneNumber(phone);
-  // Per wa.me il numero deve essere solo cifre senza il simbolo '+'
-  const digitsOnly = norm.replace(/\D/g, "");
-  return `https://wa.me/${digitsOnly}?text=${encodeURIComponent(text)}`;
 }
 
 /**
@@ -76,10 +64,14 @@ export interface SendNotificationPayload {
   salonName?: string;
   appointmentId?: string;
   customerName: string;
-  customerPhone: string;
+  customerPhone?: string;
   type: NotificationType;
   channel?: NotificationChannel;
+  title?: string;
   customMessage?: string;
+  targetToken?: string;
+  targetTopic?: string;
+  imageUrl?: string;
   templateParams?: {
     servizio?: string;
     operatore?: string;
@@ -90,18 +82,12 @@ export interface SendNotificationPayload {
 }
 
 /**
- * Invia una notifica tramite l'endpoint server-side Next.js (/api/notifications/send)
- * Traccia crediti e salva il log sia su Cloud Firestore che in cache locale.
+ * Invia una notifica Push tramite Firebase Cloud Messaging (/api/notifications/send)
+ * Traccia lo storico sia su Cloud Firestore che in cache locale.
  */
 export async function sendNotification(
   payload: SendNotificationPayload
 ): Promise<{ success: boolean; simulated?: boolean; messageId?: string; error?: string }> {
-  const normalizedPhone = normalizePhoneNumber(payload.customerPhone);
-
-  if (!normalizedPhone) {
-    return { success: false, error: "Numero di telefono non valido o mancante" };
-  }
-
   // Risolvi il messaggio finale
   const messageText = payload.customMessage || compileNotificationText(payload.type, {
     cliente: payload.customerName,
@@ -113,6 +99,8 @@ export async function sendNotification(
     link: payload.templateParams?.link
   });
 
+  const normalizedPhone = payload.customerPhone ? normalizePhoneNumber(payload.customerPhone) : undefined;
+
   try {
     // 0. Recupera il token di autenticazione dell'utente corrente
     const auth = getAuth();
@@ -122,7 +110,7 @@ export async function sendNotification(
     }
     const idToken = await currentUser.getIdToken();
 
-    // 1. Chiamata all'endpoint API Next.js Server-Side (con autenticazione)
+    // 1. Chiamata all'endpoint API Next.js Server-Side (Firebase Cloud Messaging)
     const response = await fetch("/api/notifications/send", {
       method: "POST",
       headers: { 
@@ -136,8 +124,12 @@ export async function sendNotification(
         customerName: payload.customerName,
         customerPhone: normalizedPhone,
         type: payload.type,
-        channel: payload.channel || "WHATSAPP",
-        message: messageText
+        channel: payload.channel || "PUSH_FCM",
+        title: payload.title,
+        message: messageText,
+        targetToken: payload.targetToken,
+        targetTopic: payload.targetTopic,
+        imageUrl: payload.imageUrl
       })
     });
 
@@ -152,11 +144,13 @@ export async function sendNotification(
       customerName: payload.customerName,
       customerPhone: normalizedPhone,
       type: payload.type,
-      channel: payload.channel || "WHATSAPP",
+      channel: payload.channel || "PUSH_FCM",
+      title: payload.title,
       message: messageText,
       status: resData.simulated ? "SIMULATED" : resData.success ? "SENT" : "FAILED",
-      costCredits: resData.success || resData.simulated ? 1 : 0,
+      costCredits: 0, // Notifiche Push Firebase Cloud Messaging gratuite e illimitate
       sentAt: new Date().toISOString(),
+      fcmMessageId: resData.messageId,
       error: resData.error
     };
 
@@ -168,7 +162,7 @@ export async function sendNotification(
 
     return resData;
   } catch (err: any) {
-    console.warn("Nota invio notifica:", err);
+    console.warn("[FCM] Nota invio notifica:", err);
     // Fallback salvataggio locale del tentativo
     const fallbackItem: NotificationLogItem = {
       id: `log_${Date.now()}`,
@@ -178,10 +172,11 @@ export async function sendNotification(
       customerName: payload.customerName,
       customerPhone: normalizedPhone,
       type: payload.type,
-      channel: payload.channel || "WHATSAPP",
+      channel: payload.channel || "PUSH_FCM",
+      title: payload.title,
       message: messageText,
       status: "SIMULATED",
-      costCredits: 1,
+      costCredits: 0,
       sentAt: new Date().toISOString(),
     };
     saveNotificationLogLocal(payload.tenantId, fallbackItem);
@@ -248,52 +243,53 @@ export async function fetchNotificationLogs(tenantId: string): Promise<Notificat
  * Salva le impostazioni delle notifiche del salone
  */
 export async function saveSalonNotificationSettings(
-  tenantId: string,
+  tenantId: string, 
   settings: NotificationSettings
 ): Promise<void> {
   if (!tenantId) return;
 
-  // 1. Cache Locale
+  // 1. Salva in LocalStorage
   if (typeof window !== "undefined") {
     try {
       localStorage.setItem(`${STORAGE_SETTINGS_PREFIX}${tenantId}`, JSON.stringify(settings));
     } catch (e) {}
   }
 
-  // 2. Cloud Firestore
+  // 2. Salva su Cloud Firestore
   try {
-    const docRef = doc(db, "saloni", tenantId, "config", "notifications");
+    const docRef = doc(db, "saloni", tenantId, "settings", "notifications");
     await setDoc(docRef, settings, { merge: true });
-    // Aggiorna anche nel profilo utente principale se esiste
-    const userDocRef = doc(db, "users", tenantId);
-    await setDoc(userDocRef, { notificationSettings: settings }, { merge: true });
   } catch (err) {
     console.warn("Nota salvataggio impostazioni notifiche Firestore:", err);
   }
 }
 
 /**
- * Recupera le impostazioni delle notifiche del salone
+ * Recupera le impostazioni notifiche del salone
  */
-export async function getSalonNotificationSettings(tenantId: string): Promise<NotificationSettings> {
+export async function fetchSalonNotificationSettings(tenantId: string): Promise<NotificationSettings> {
   if (!tenantId) return DEFAULT_NOTIFICATION_SETTINGS;
 
-  // 1. Da cache locale
+  // 1. Da LocalStorage
   if (typeof window !== "undefined") {
     try {
       const raw = localStorage.getItem(`${STORAGE_SETTINGS_PREFIX}${tenantId}`);
-      if (raw) return JSON.parse(raw);
+      if (raw) {
+        return { ...DEFAULT_NOTIFICATION_SETTINGS, ...JSON.parse(raw) };
+      }
     } catch (e) {}
   }
 
   // 2. Da Cloud Firestore
   try {
-    const docRef = doc(db, "saloni", tenantId, "config", "notifications");
+    const docRef = doc(db, "saloni", tenantId, "settings", "notifications");
     const snap = await getDoc(docRef);
     if (snap.exists()) {
-      return snap.data() as NotificationSettings;
+      return { ...DEFAULT_NOTIFICATION_SETTINGS, ...(snap.data() as NotificationSettings) };
     }
-  } catch (e) {}
+  } catch (err) {
+    console.warn("Nota lettura impostazioni notifiche Firestore:", err);
+  }
 
   return DEFAULT_NOTIFICATION_SETTINGS;
 }

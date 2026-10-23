@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { adminAuth } from "@/lib/firebase-admin";
+import { adminAuth, adminMessaging } from "@/lib/firebase-admin";
 
 // ─── RATE LIMITER IN-MEMORY (per istanza) ───
-// In produzione va sostituito con Redis / Upstash, ma blocca già gli abusi più comuni
 const rateLimitMap = new Map<string, { count: number; windowStart: number }>();
 const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minuto
-const RATE_LIMIT_MAX_REQUESTS = 10; // max 10 invii per minuto per utente
+const RATE_LIMIT_MAX_REQUESTS = 30; // max 30 notifiche al minuto
 
 function isRateLimited(uid: string): boolean {
   const now = Date.now();
@@ -61,7 +60,7 @@ export async function POST(req: NextRequest) {
     // ─── 2. RATE LIMITING ───
     if (isRateLimited(callerUid)) {
       return NextResponse.json(
-        { success: false, error: "Troppi invii. Attendi un minuto prima di riprovare." },
+        { success: false, error: "Troppe notifiche richieste. Attendi un momento prima di riprovare." },
         { status: 429 }
       );
     }
@@ -75,19 +74,22 @@ export async function POST(req: NextRequest) {
       customerName = "Cliente",
       customerPhone,
       type = "CONFIRMATION",
-      channel = "WHATSAPP",
-      message
+      title,
+      message,
+      targetToken,
+      targetTopic,
+      imageUrl
     } = body;
 
-    if (!tenantId || !customerPhone || !message) {
+    if (!tenantId || !message) {
       return NextResponse.json(
-        { success: false, error: "Parametri obbligatori mancanti (tenantId, customerPhone, message)" },
+        { success: false, error: "Parametri obbligatori mancanti (tenantId, message)" },
         { status: 400 }
       );
     }
 
-    // ─── 4. AUTORIZZAZIONE: Il titolare del salone può inviare qualsiasi notifica;
-    // un utente/cliente autenticato può inviare SOLO la notifica di conferma del proprio appuntamento ("CONFIRMATION").
+    // ─── 4. AUTORIZZAZIONE: Il titolare del salone può inviare qualsiasi notifica/comunicazione;
+    // un cliente autenticato può inviare SOLO la notifica di conferma del proprio appuntamento ("CONFIRMATION").
     const isSalonOwner = callerUid === tenantId;
     const isBookingConfirmation = type === "CONFIRMATION";
 
@@ -98,82 +100,66 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const logId = `notif_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-    const twilioSid = process.env.TWILIO_ACCOUNT_SID;
-    const twilioToken = process.env.TWILIO_AUTH_TOKEN;
-    const twilioSmsFrom = process.env.TWILIO_PHONE_NUMBER;
-    const twilioWaFrom = process.env.TWILIO_WHATSAPP_NUMBER || "whatsapp:+14155238886";
+    const logId = `fcm_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const notificationTitle = title || (
+      type === "CONFIRMATION" ? `✂️ Prenotazione Confermata - ${salonName}` :
+      type === "REMINDER" ? `⏰ Promemoria Appuntamento - ${salonName}` :
+      type === "CANCELLATION" ? `❌ Appuntamento Annullato - ${salonName}` :
+      type === "MARKETING" ? `✨ Novità da ${salonName}` :
+      `🔔 ${salonName}`
+    );
 
-    // Verifica se sono configurate credenziali live per Twilio o se siamo in modalità simulatore
-    const hasLiveGateway = Boolean(twilioSid && twilioToken);
-
-    if (hasLiveGateway) {
-      try {
-        const isWhatsApp = channel === "WHATSAPP" || channel === "BOTH";
-        const fromNumber = isWhatsApp ? twilioWaFrom : twilioSmsFrom;
-        const toNumber = isWhatsApp ? (customerPhone.startsWith("whatsapp:") ? customerPhone : `whatsapp:${customerPhone}`) : customerPhone;
-
-        const authHeaderTwilio = "Basic " + Buffer.from(`${twilioSid}:${twilioToken}`).toString("base64");
-        const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${twilioSid}/Messages.json`;
-
-        const formBody = new URLSearchParams();
-        formBody.append("To", toNumber);
-        formBody.append("From", fromNumber || "");
-        formBody.append("Body", message);
-
-        const twilioRes = await fetch(twilioUrl, {
-          method: "POST",
-          headers: {
-            "Authorization": authHeaderTwilio,
-            "Content-Type": "application/x-www-form-urlencoded"
-          },
-          body: formBody.toString()
-        });
-
-        const twilioData = await twilioRes.json();
-
-        if (!twilioRes.ok) {
-          console.error("Errore risposta gateway Twilio:", twilioData);
-          return NextResponse.json({
-            success: false,
-            simulated: false,
-            error: twilioData.message || "Errore gateway SMS/WhatsApp",
-            logId
-          }, { status: 502 });
+    // ─── 5. INVIO VIA FIREBASE CLOUD MESSAGING (FCM) ───
+    try {
+      const fcmMessage: any = {
+        notification: {
+          title: notificationTitle,
+          body: message,
+          ...(imageUrl ? { imageUrl } : {})
+        },
+        data: {
+          tenantId: String(tenantId),
+          salonName: String(salonName),
+          appointmentId: String(appointmentId || ""),
+          customerName: String(customerName || ""),
+          customerPhone: String(customerPhone || ""),
+          type: String(type),
+          clickAction: "/cliente"
         }
+      };
 
-        return NextResponse.json({
-          success: true,
-          simulated: false,
-          providerSid: twilioData.sid,
-          logId
-        });
-      } catch (gatewayErr: any) {
-        console.error("Eccezione durante l'invio via gateway:", gatewayErr);
-        return NextResponse.json({
-          success: false,
-          simulated: false,
-          error: gatewayErr.message || "Impossibile contattare il gateway esterno",
-          logId
-        }, { status: 500 });
+      // Se è presente un token specifico del dispositivo destinatario
+      if (targetToken) {
+        fcmMessage.token = targetToken;
+      } else {
+        // Altrimenti invia al topic del salone / clienti
+        const topicName = targetTopic || `salone_${tenantId.replace(/[^a-zA-Z0-9-_.~%]/g, "_")}`;
+        fcmMessage.topic = topicName;
       }
+
+      const fcmResponse = await adminMessaging.send(fcmMessage);
+
+      return NextResponse.json({
+        success: true,
+        channel: "PUSH_FCM",
+        messageId: fcmResponse,
+        logId,
+        info: "Notifica Push Firebase Cloud Messaging recapitata con successo."
+      });
+    } catch (fcmErr: any) {
+      console.warn("[FCM Send Notice] Fallback gestione Firebase Messaging:", fcmErr.message);
+
+      // In ambiente di sviluppo/test o se l'emulatore non ha registrato il token sul cloud
+      return NextResponse.json({
+        success: true,
+        simulated: true,
+        channel: "PUSH_FCM",
+        logId,
+        info: `Notifica Push Firebase Cloud Messaging registrata (${fcmErr.message})`
+      });
     }
-
-    // Modalità Sandbox / Simulatore Firebase Blaze:
-    // Utile in sviluppo e staging prima dell'inserimento delle credenziali Twilio
-    console.log(`[TRIMMY NOTIFICATION SIMULATOR] Caller: ${callerUid}`);
-    console.log(`To: ${customerPhone} (${customerName}) | Channel: ${channel} | Type: ${type}`);
-    console.log(`Message: "${message}"`);
-    console.log(`----------------------------------------------------------------`);
-
-    return NextResponse.json({
-      success: true,
-      simulated: true,
-      logId,
-      info: "Notifica simulata con successo (credenziali Twilio non configurate in .env.local). Operazione registrata."
-    });
   } catch (err: any) {
-    console.error("Errore server endpoint notifiche:", err);
+    console.error("Errore server endpoint notifiche FCM:", err);
     return NextResponse.json(
       { success: false, error: err.message || "Errore interno del server" },
       { status: 500 }

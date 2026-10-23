@@ -32,10 +32,11 @@ export interface UserProfile {
   lng?: number;
   openingHours?: string;
 
-  // Impostazioni Notifiche SMS / WhatsApp & Crediti
+  // Impostazioni Notifiche Firebase Cloud Messaging (FCM)
   notificationSettings?: NotificationSettings;
-  smsCreditsUsed?: number;
-  smsCreditsLimit?: number;
+  fcmToken?: string;
+  fcmPushEnabled?: boolean;
+  fcmUpdatedAt?: string;
 
   // Dati Cliente (Area Personale)
   phoneNumber?: string;

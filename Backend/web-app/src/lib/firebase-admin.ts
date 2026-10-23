@@ -1,5 +1,6 @@
 import { initializeApp, getApps, cert, type App } from "firebase-admin/app";
 import { getAuth, type Auth } from "firebase-admin/auth";
+import { getMessaging, type Messaging } from "firebase-admin/messaging";
 
 /**
  * Inizializza Firebase Admin SDK in modo singleton per le API Route Next.js.
@@ -38,5 +39,7 @@ function getAdminApp(): App {
 
 const adminApp: App = getAdminApp();
 const adminAuth: Auth = getAuth(adminApp);
+const adminMessaging: Messaging = getMessaging(adminApp);
 
-export { adminApp, adminAuth };
+export { adminApp, adminAuth, adminMessaging };
+

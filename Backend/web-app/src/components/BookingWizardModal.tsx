@@ -738,7 +738,7 @@ export default function BookingWizardModal({
                 <div className="p-3 bg-indigo-50/70 border border-indigo-200/70 rounded-xl text-xs text-indigo-900 flex items-center gap-2.5">
                   <MessageSquare className="w-4 h-4 text-indigo-600 shrink-0" />
                   <span>
-                    <strong>Avviso Automatico:</strong> Riceverai la conferma e un promemoria via WhatsApp / SMS prima dell&apos;appuntamento.
+                    <strong>Notifica Push Firebase:</strong> Riceverai la conferma immediata e il promemoria automatico gestiti da Firebase Cloud Messaging.
                   </span>
                 </div>
               </div>

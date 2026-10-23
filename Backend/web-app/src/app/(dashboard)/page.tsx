@@ -27,8 +27,7 @@ import {
 } from "@/lib/appointments-service";
 import { getUserProfile, fetchUserProfile } from "@/lib/user-profile";
 import { addSalonNotification } from "@/lib/salon-notifications";
-import { parseDateSafe } from "@/lib/date-utils";
-import { buildWhatsAppClickToChatUrl } from "@/lib/notifications-service";
+import { sendNotification } from "@/lib/notifications-service";
 import { 
   Plus, 
   X, 
@@ -1187,32 +1186,46 @@ export default function AgendaPage() {
                 </div>
               </div>
 
-              {/* Contatto Rapido WhatsApp & Telefono */}
+              {/* Contatto Rapido Notifica Push Firebase & Telefono */}
               {selectedAppt.customer?.phone && (
                 <div className="p-3 bg-zinc-50 border border-zinc-200/80 rounded-xl space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-[11px] font-semibold text-zinc-700 uppercase tracking-wider flex items-center gap-1.5">
-                      <MessageSquare className="w-3.5 h-3.5 text-emerald-600" />
-                      Promemoria / Contatto
+                      <MessageSquare className="w-3.5 h-3.5 text-indigo-600" />
+                      Notifiche Firebase & Contatto
                     </span>
                     <span className="text-[11px] text-zinc-500 font-mono">{selectedAppt.customer.phone}</span>
                   </div>
                   <div className="flex gap-2">
-                    <a
-                      href={buildWhatsAppClickToChatUrl(
-                        selectedAppt.customer.phone,
-                        `Ciao ${selectedAppt.customer.firstName}! Ti ricordiamo il tuo appuntamento per ${selectedAppt.service.name} il ${new Date(selectedAppt.startTime).toLocaleDateString("it-IT", { day: "numeric", month: "long" })} alle ore ${new Date(selectedAppt.startTime).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}.`
-                      )}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex-1 py-1.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shadow-2xs"
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (!currentUser || !selectedAppt) return;
+                        try {
+                          await sendNotification({
+                            tenantId: currentUser.uid,
+                            salonName: currentProfile?.salonName || "Salone",
+                            appointmentId: selectedAppt.id,
+                            customerName: `${selectedAppt.customer.firstName} ${selectedAppt.customer.lastName}`,
+                            customerPhone: selectedAppt.customer.phone,
+                            type: "REMINDER",
+                            channel: "PUSH_FCM",
+                            title: `Promemoria: ${selectedAppt.service.name}`,
+                            customMessage: `Promemoria appuntamento per ${selectedAppt.service.name} il ${new Date(selectedAppt.startTime).toLocaleDateString("it-IT", { day: "numeric", month: "long" })} alle ore ${new Date(selectedAppt.startTime).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}.`
+                          });
+                          alert("Notifica Push Firebase inviata con successo al cliente!");
+                        } catch (err: any) {
+                          alert("Impossibile inviare notifica: " + (err.message || "Errore"));
+                        }
+                      }}
+                      className="flex-1 py-1.5 px-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shadow-2xs cursor-pointer"
                     >
                       <MessageSquare className="w-3.5 h-3.5" />
-                      Invia WhatsApp 💬
-                    </a>
+                      Invia Push FCM 🔔
+                    </button>
                     <a
                       href={`tel:${selectedAppt.customer.phone}`}
-                      className="py-1.5 px-3 bg-white border border-zinc-200 text-zinc-700 hover:bg-zinc-100 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
+                      className="py-1.5 px-3 bg-white border border-zinc-200 text-zinc-700 hover:bg-zinc-100 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                     >
                       <Phone className="w-3.5 h-3.5" />
                       Chiama
