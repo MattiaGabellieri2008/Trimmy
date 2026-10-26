@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Plus, X, Phone, Mail, CalendarPlus, MessageCircle, Loader2, Calendar, Users } from "lucide-react";
+import { Plus, X, Phone, Mail, CalendarPlus, MessageCircle, Loader2, Calendar, Users, Trash2, CheckCircle2, ShieldCheck } from "lucide-react";
 import { dataConnect, auth } from "@/lib/firebase";
 import { onAuthStateChanged } from "firebase/auth";
 import { getSalonTenantId, ensureSalonTenant } from "@/lib/tenant-helper";
@@ -12,7 +12,14 @@ import {
   ListCustomersData, 
   GetCustomerDetailsData 
 } from "../../../dataconnect-generated";
-import { fetchSalonCustomers, saveSalonCustomer } from "@/lib/customers-store";
+import { 
+  fetchSalonCustomers, 
+  saveSalonCustomer, 
+  deleteSalonCustomer,
+  normalizeCustomerPhone,
+  normalizeCustomerEmail,
+  deduplicateCustomersList 
+} from "@/lib/customers-store";
 
 export default function ClientiPage() {
   const [salonTenantId, setSalonTenantId] = useState<string>("");
@@ -37,13 +44,16 @@ export default function ClientiPage() {
   // Selected customer details
   const [selectedCustomer, setSelectedCustomer] = useState<GetCustomerDetailsData["customer"] | null>(null);
   const [isLoadingDetails, setIsLoadingDetails] = useState(false);
+  const [isDeletingCustomer, setIsDeletingCustomer] = useState(false);
+  const [actionMessage, setActionMessage] = useState<{ text: string; type: "success" | "info" } | null>(null);
 
   const fetchCustomers = async (tenantId: string, alternateId?: string) => {
     if (!tenantId) return;
     try {
       const list = await fetchSalonCustomers(tenantId, alternateId || auth.currentUser?.uid);
+      const deduplicated = deduplicateCustomersList(list);
       setCustomers(
-        list.map((c) => ({
+        deduplicated.map((c) => ({
           id: c.id,
           firstName: c.firstName,
           lastName: c.lastName,
@@ -94,7 +104,18 @@ export default function ClientiPage() {
     if (!formData.firstName || !formData.lastName || !formData.phone || !salonTenantId) return;
     setIsSubmitting(true);
     try {
+      const cleanPhone = normalizeCustomerPhone(formData.phone);
+      const cleanEmail = normalizeCustomerEmail(formData.email);
+      const existingMatch = customers.find((c) => {
+        if (cleanPhone && cleanPhone.length >= 7 && normalizeCustomerPhone(c.phone) === cleanPhone) return true;
+        if (cleanEmail && cleanEmail.includes("@") && c.email && normalizeCustomerEmail(c.email) === cleanEmail) return true;
+        const sameName = `${c.firstName} ${c.lastName}`.trim().toLowerCase() === `${formData.firstName} ${formData.lastName}`.trim().toLowerCase();
+        if (sameName && (normalizeCustomerPhone(c.phone) === cleanPhone || !c.phone || !cleanPhone)) return true;
+        return false;
+      });
+
       await saveSalonCustomer(salonTenantId, {
+        id: existingMatch?.id, // Se già esistente, aggiorna in-place senza creare duplicati
         firstName: formData.firstName,
         lastName: formData.lastName,
         phone: formData.phone,
@@ -102,9 +123,25 @@ export default function ClientiPage() {
         birthday: formData.birthday || null,
         technicalNotes: formData.technicalNotes || null
       }, auth.currentUser?.uid);
+
       setIsNewDrawerOpen(false);
       setFormData({ firstName: "", lastName: "", phone: "", email: "", birthday: "", technicalNotes: "" });
       await fetchCustomers(salonTenantId, auth.currentUser?.uid);
+
+      if (existingMatch) {
+        setActionMessage({
+          text: `Cliente "${formData.firstName} ${formData.lastName}" già presente: scheda aggiornata e unificata senza duplicati.`,
+          type: "info"
+        });
+      } else {
+        setActionMessage({
+          text: `Nuovo cliente "${formData.firstName} ${formData.lastName}" salvato con successo!`,
+          type: "success"
+        });
+      }
+
+      setTimeout(() => setActionMessage(null), 4000);
+
       if (typeof window !== "undefined") {
         window.dispatchEvent(new CustomEvent("trimmy-data-updated"));
       }
@@ -112,6 +149,34 @@ export default function ClientiPage() {
       console.error("Errore salvataggio cliente:", e);
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleDeleteCustomer = async (customerId: string) => {
+    if (!customerId || !salonTenantId) return;
+    const targetCust = customers.find((c) => c.id === customerId);
+    const name = targetCust ? `${targetCust.firstName} ${targetCust.lastName}` : "questo cliente";
+    
+    if (!confirm(`Sei sicuro di voler eliminare l'anagrafica di ${name}? L'operazione non può essere annullata.`)) {
+      return;
+    }
+
+    setIsDeletingCustomer(true);
+    try {
+      await deleteSalonCustomer(salonTenantId, customerId, auth.currentUser?.uid);
+      setIsDetailsDrawerOpen(false);
+      setSelectedCustomer(null);
+      await fetchCustomers(salonTenantId, auth.currentUser?.uid);
+      setActionMessage({
+        text: `Scheda cliente "${name}" eliminata con successo.`,
+        type: "success"
+      });
+      setTimeout(() => setActionMessage(null), 4000);
+    } catch (err) {
+      console.error("Errore eliminazione cliente:", err);
+      alert("Impossibile eliminare il cliente. Riprova più tardi.");
+    } finally {
+      setIsDeletingCustomer(false);
     }
   };
 
@@ -163,8 +228,15 @@ export default function ClientiPage() {
     <div className="max-w-7xl mx-auto space-y-8 relative">
       <header className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-3 pb-4 border-b border-zinc-200/60">
         <div>
-          <h2 className="text-2xl font-semibold text-zinc-900 tracking-tight">Clienti</h2>
-          <p className="text-sm text-zinc-500 mt-1">Gestisci anagrafiche, storico e note tecniche.</p>
+          <div className="flex items-center gap-3">
+            <h2 className="text-2xl font-semibold text-zinc-900 tracking-tight">Clienti</h2>
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+              <ShieldCheck className="w-3.5 h-3.5" /> Zero Duplicati
+            </span>
+          </div>
+          <p className="text-sm text-zinc-500 mt-1">
+            Gestisci anagrafiche, storico e note tecniche • <span className="font-semibold text-zinc-700">{customers.length}</span> {customers.length === 1 ? "cliente registrato" : "clienti registrati"}
+          </p>
         </div>
         <button 
           onClick={() => setIsNewDrawerOpen(true)}
@@ -175,6 +247,23 @@ export default function ClientiPage() {
         </button>
       </header>
 
+      {/* FEEDBACK BANNER */}
+      {actionMessage && (
+        <div className={`p-4 rounded-xl border flex items-center justify-between transition-all shadow-xs ${
+          actionMessage.type === "success" 
+            ? "bg-emerald-50 border-emerald-200 text-emerald-800" 
+            : "bg-blue-50 border-blue-200 text-blue-800"
+        }`}>
+          <div className="flex items-center gap-2.5 text-sm font-medium">
+            <CheckCircle2 className="w-4 h-4 shrink-0" />
+            {actionMessage.text}
+          </div>
+          <button onClick={() => setActionMessage(null)} className="text-zinc-400 hover:text-zinc-600 p-1">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       {isLoading ? (
         <div className="flex justify-center p-12"><Loader2 className="w-8 h-8 animate-spin text-zinc-400" /></div>
       ) : (
@@ -183,7 +272,7 @@ export default function ClientiPage() {
             <div 
               key={customer.id} 
               onClick={() => handleCustomerClick(customer.id)}
-              className="bg-white border border-zinc-200/60 rounded-xl p-5 shadow-sm hover:shadow-md transition-all flex flex-col justify-between cursor-pointer"
+              className="bg-white border border-zinc-200/60 rounded-xl p-5 shadow-sm hover:shadow-md transition-all flex flex-col justify-between cursor-pointer group"
             >
               <div>
                 <div className="flex justify-between items-start mb-4">
@@ -202,6 +291,17 @@ export default function ClientiPage() {
                       )}
                     </div>
                   </div>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeleteCustomer(customer.id);
+                    }}
+                    title="Elimina scheda cliente"
+                    className="opacity-0 group-hover:opacity-100 p-1.5 text-zinc-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
                 </div>
                 
                 <div className="space-y-1.5 mb-5">
@@ -401,6 +501,31 @@ export default function ClientiPage() {
             </div>
           )}
         </div>
+
+        {selectedCustomer && (
+          <div className="p-6 border-t border-zinc-100 flex items-center justify-between bg-zinc-50/50">
+            <button
+              type="button"
+              onClick={() => handleDeleteCustomer(selectedCustomer.id)}
+              disabled={isDeletingCustomer}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-rose-600 bg-rose-50 hover:bg-rose-100 border border-rose-200/80 rounded-lg transition-colors disabled:opacity-50"
+            >
+              {isDeletingCustomer ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Trash2 className="w-3.5 h-3.5" />
+              )}
+              Elimina Scheda Cliente
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsDetailsDrawerOpen(false)}
+              className="px-4 py-2 text-xs font-medium text-zinc-700 bg-white border border-zinc-200 hover:bg-zinc-50 rounded-lg shadow-2xs"
+            >
+              Chiudi
+            </button>
+          </div>
+        )}
       </div>
 
     </div>

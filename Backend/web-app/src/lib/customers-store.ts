@@ -1,5 +1,5 @@
 import { db, dataConnect } from "./firebase";
-import { doc, getDoc, setDoc, collection, getDocs, query } from "firebase/firestore";
+import { doc, getDoc, setDoc, collection, getDocs, query, deleteDoc } from "firebase/firestore";
 import { listCustomers, createCustomer, ListCustomersData } from "../dataconnect-generated";
 import { getSalonTenantId } from "./tenant-helper";
 
@@ -16,6 +16,96 @@ export interface CustomerItem {
 }
 
 const STORAGE_PREFIX = "trimmy_customers_";
+
+/**
+ * Normalizza il recapito telefonico per il confronto univoco (rimuove spazi, trattini, +39 o 0039)
+ */
+export function normalizeCustomerPhone(phone?: string | null): string {
+  if (!phone) return "";
+  let cleaned = phone.replace(/[\s\-\(\)\.]/g, "");
+  if (cleaned.startsWith("0039")) cleaned = cleaned.slice(4);
+  else if (cleaned.startsWith("+39")) cleaned = cleaned.slice(3);
+  return cleaned;
+}
+
+/**
+ * Normalizza l'indirizzo email per il confronto univoco (lowercase e trim)
+ */
+export function normalizeCustomerEmail(email?: string | null): string {
+  if (!email) return "";
+  return email.trim().toLowerCase();
+}
+
+/**
+ * Verifica se due record anagrafici rappresentano lo stesso cliente
+ * (stesso ID, oppure stesso numero di telefono normalizzato, oppure stessa email, oppure stesso Nome + Cognome)
+ */
+export function isSameCustomer(a: Partial<CustomerItem>, b: Partial<CustomerItem>): boolean {
+  if (!a || !b) return false;
+  if (a.id && b.id && a.id === b.id) return true;
+
+  const phoneA = normalizeCustomerPhone(a.phone);
+  const phoneB = normalizeCustomerPhone(b.phone);
+  if (phoneA && phoneB && phoneA.length >= 7 && phoneA === phoneB) {
+    return true;
+  }
+
+  const emailA = normalizeCustomerEmail(a.email);
+  const emailB = normalizeCustomerEmail(b.email);
+  if (emailA && emailB && emailA.includes("@") && emailA === emailB) {
+    return true;
+  }
+
+  const nameA = `${a.firstName || ""} ${a.lastName || ""}`.trim().toLowerCase();
+  const nameB = `${b.firstName || ""} ${b.lastName || ""}`.trim().toLowerCase();
+  if (nameA && nameA === nameB && nameA.length > 2) {
+    // Se hanno lo stesso nome e cognome completo:
+    // Se entrambi hanno telefoni validi e differiscono, considerali distinti
+    if (phoneA && phoneB && phoneA.length >= 7 && phoneB.length >= 7 && phoneA !== phoneB) {
+      return false;
+    }
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Deduplica una lista di clienti unificando le informazioni più complete ed eliminando cloni/ripetizioni
+ */
+export function deduplicateCustomersList(customers: CustomerItem[]): CustomerItem[] {
+  const uniqueList: CustomerItem[] = [];
+
+  for (const item of customers) {
+    if (!item || (!item.firstName && !item.lastName)) continue;
+
+    const existingIdx = uniqueList.findIndex((u) => isSameCustomer(u, item));
+    if (existingIdx === -1) {
+      uniqueList.push({ ...item });
+    } else {
+      // Unisci i record mantenendo i dati più completi
+      const existing = uniqueList[existingIdx];
+
+      const mergedNotes = [existing.technicalNotes, item.technicalNotes]
+        .filter((n): n is string => Boolean(n && n.trim()))
+        .filter((val, idx, arr) => arr.indexOf(val) === idx)
+        .join("\n");
+
+      uniqueList[existingIdx] = {
+        ...existing,
+        firstName: existing.firstName || item.firstName,
+        lastName: existing.lastName || item.lastName,
+        phone: existing.phone || item.phone,
+        email: existing.email || item.email || null,
+        birthday: existing.birthday || item.birthday || null,
+        technicalNotes: mergedNotes || null,
+        createdAt: existing.createdAt || item.createdAt
+      };
+    }
+  }
+
+  return uniqueList.sort((a, b) => a.lastName.localeCompare(b.lastName, "it-IT"));
+}
 
 /**
  * Genera un UUID v4 standard per un nuovo cliente
@@ -40,7 +130,7 @@ export function getSalonCustomersSync(tenantId: string): CustomerItem[] {
     const raw = localStorage.getItem(`${STORAGE_PREFIX}${tenantId}`);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? (parsed as CustomerItem[]) : [];
+    return Array.isArray(parsed) ? deduplicateCustomersList(parsed as CustomerItem[]) : [];
   } catch (e) {
     console.error("Errore lettura clienti locale:", e);
     return [];
@@ -53,7 +143,8 @@ export function getSalonCustomersSync(tenantId: string): CustomerItem[] {
 export function setSalonCustomersSync(tenantId: string, customers: CustomerItem[]): void {
   if (typeof window === "undefined" || !tenantId) return;
   try {
-    localStorage.setItem(`${STORAGE_PREFIX}${tenantId}`, JSON.stringify(customers));
+    const cleanList = deduplicateCustomersList(customers);
+    localStorage.setItem(`${STORAGE_PREFIX}${tenantId}`, JSON.stringify(cleanList));
   } catch (e) {
     console.error("Errore scrittura clienti locale:", e);
   }
@@ -64,20 +155,25 @@ export function setSalonCustomersSync(tenantId: string, customers: CustomerItem[
  * 1. Da Cloud SQL PostgreSQL (DataConnect) filtrato per tenantId
  * 2. Da Cloud Firestore (/saloni/{tenantId}/clienti)
  * 3. Fallback sulla cache locale isolata
+ *
+ * Applica automaticamente la DEDUPLICAZIONE per evitare clienti ripetuti
+ * e ripulisce in background eventuali documenti duplicati su Firestore e LocalStorage.
  */
 export async function fetchSalonCustomers(tenantId: string, alternateId?: string): Promise<CustomerItem[]> {
   if (!tenantId && !alternateId) return [];
 
   const tid = getSalonTenantId(tenantId || alternateId);
   const altId = alternateId && alternateId !== tid ? alternateId : tenantId !== tid ? tenantId : null;
-  const foundCustomers: Map<string, CustomerItem> = new Map();
+
+  const rawCandidates: CustomerItem[] = [];
+  const firestoreDocIdMap: Map<string, string> = new Map(); // docId -> key
 
   // 1. Prova da Cloud SQL DataConnect
   try {
     const res = await listCustomers(dataConnect, { tenantId: tid });
     if (res.data?.customers && res.data.customers.length > 0) {
       res.data.customers.forEach((c) => {
-        foundCustomers.set(c.id, {
+        rawCandidates.push({
           id: c.id,
           tenantId: tid,
           firstName: c.firstName,
@@ -99,12 +195,14 @@ export async function fetchSalonCustomers(tenantId: string, alternateId?: string
     const snap = await getDocs(subColRef);
     snap.forEach((d) => {
       const data = d.data() as CustomerItem;
-      if (data && data.firstName) {
-        foundCustomers.set(data.id || d.id, {
+      if (data && (data.firstName || data.lastName)) {
+        const item: CustomerItem = {
           ...data,
           id: data.id || d.id,
           tenantId: tid
-        });
+        };
+        rawCandidates.push(item);
+        firestoreDocIdMap.set(d.id, d.id);
       }
     });
   } catch (fsErr) {
@@ -118,12 +216,14 @@ export async function fetchSalonCustomers(tenantId: string, alternateId?: string
       const snapAlt = await getDocs(subColAlt);
       snapAlt.forEach((d) => {
         const data = d.data() as CustomerItem;
-        if (data && data.firstName) {
-          foundCustomers.set(data.id || d.id, {
+        if (data && (data.firstName || data.lastName)) {
+          const item: CustomerItem = {
             ...data,
             id: data.id || d.id,
             tenantId: tid
-          });
+          };
+          rawCandidates.push(item);
+          firestoreDocIdMap.set(d.id, d.id);
         }
       });
     } catch (fsErr) {
@@ -133,26 +233,48 @@ export async function fetchSalonCustomers(tenantId: string, alternateId?: string
 
   // 3. Fallback cache locale (controlla sia tid che altId)
   const localList = [...getSalonCustomersSync(tid), ...(altId ? getSalonCustomersSync(altId) : [])];
-  localList.forEach((c) => {
-    if (!foundCustomers.has(c.id)) {
-      foundCustomers.set(c.id, { ...c, tenantId: tid });
+  localList.forEach((c) => rawCandidates.push(c));
+
+  // 4. Deduplica rigorosa di tutti i clienti trovati
+  const deduplicated = deduplicateCustomersList(rawCandidates);
+
+  // 5. Pulizia attiva in background di eventuali duplicati Firestore
+  try {
+    for (const uniqueCust of deduplicated) {
+      // Trova tutti i documenti con lo stesso cliente
+      const duplicatesOfThis = rawCandidates.filter(
+        (cand) => cand.id !== uniqueCust.id && isSameCustomer(cand, uniqueCust)
+      );
+
+      for (const dup of duplicatesOfThis) {
+        // Se il duplicato aveva un docId Firestore diverso, eliminalo per sanare il database
+        if (dup.id && firestoreDocIdMap.has(dup.id)) {
+          try {
+            await deleteDoc(doc(db, "saloni", tid, "clienti", dup.id));
+            if (altId) {
+              await deleteDoc(doc(db, "saloni", altId, "clienti", dup.id));
+            }
+          } catch (e) {
+            // Silenzioso: eliminazione facoltativa di pulizia
+          }
+        }
+      }
     }
-  });
-
-  const merged = Array.from(foundCustomers.values()).sort((a, b) =>
-    a.lastName.localeCompare(b.lastName, "it-IT")
-  );
-
-  // Aggiorna la cache locale per il singolo salone
-  setSalonCustomersSync(tid, merged);
-  if (altId) {
-    setSalonCustomersSync(altId, merged);
+  } catch (cleanErr) {
+    console.warn("Nota pulizia duplicati Firestore:", cleanErr);
   }
-  return merged;
+
+  // Aggiorna la cache locale per il singolo salone con i soli record univoci
+  setSalonCustomersSync(tid, deduplicated);
+  if (altId) {
+    setSalonCustomersSync(altId, deduplicated);
+  }
+  return deduplicated;
 }
 
 /**
- * Salva o crea un nuovo cliente assicurando che sia visibile ESCLUSIVAMENTE al salone specificato
+ * Salva o crea un nuovo cliente assicurando che sia visibile ESCLUSIVAMENTE al salone specificato.
+ * PREVIENE I DUPLICATI: se un cliente con lo stesso telefono o email esiste già, ne aggiorna i dati in-place.
  */
 export async function saveSalonCustomer(
   tenantId: string,
@@ -172,40 +294,62 @@ export async function saveSalonCustomer(
   const tid = getSalonTenantId(tenantId || alternateId);
   const altId = alternateId && alternateId !== tid ? alternateId : tenantId !== tid ? tenantId : null;
 
-  const customerId = customerData.id || generateCustomerUuid();
+  // 0. Verifica se un cliente con gli stessi recapiti (telefono o email o nome completo) esiste già
+  const existingList = getSalonCustomersSync(tid);
+  const match = existingList.find((c) =>
+    isSameCustomer(c, {
+      firstName: customerData.firstName,
+      lastName: customerData.lastName,
+      phone: customerData.phone,
+      email: customerData.email
+    })
+  );
+
+  const customerId = customerData.id || match?.id || generateCustomerUuid();
+
+  // Se esisteva già, unisci le note tecniche invece di sovrascriverle
+  let mergedNotes = customerData.technicalNotes || null;
+  if (match && match.technicalNotes && customerData.technicalNotes && match.technicalNotes !== customerData.technicalNotes) {
+    mergedNotes = `${match.technicalNotes}\n${customerData.technicalNotes}`;
+  } else if (match && !customerData.technicalNotes && match.technicalNotes) {
+    mergedNotes = match.technicalNotes;
+  }
+
   const customerItem: CustomerItem = {
     id: customerId,
     tenantId: tid,
     firstName: customerData.firstName.trim(),
     lastName: customerData.lastName.trim(),
     phone: customerData.phone.trim(),
-    email: customerData.email ? customerData.email.trim() : null,
-    birthday: customerData.birthday || null,
-    technicalNotes: customerData.technicalNotes || null,
-    createdAt: new Date().toISOString()
+    email: customerData.email ? customerData.email.trim() : match?.email || null,
+    birthday: customerData.birthday || match?.birthday || null,
+    technicalNotes: mergedNotes,
+    createdAt: match?.createdAt || new Date().toISOString()
   };
 
   // 1. Salva in LocalStorage (sia sotto tid che altId)
   const current = getSalonCustomersSync(tid);
-  const updated = [customerItem, ...current.filter((c) => c.id !== customerId)];
+  const updated = deduplicateCustomersList([customerItem, ...current.filter((c) => c.id !== customerId && !isSameCustomer(c, customerItem))]);
   setSalonCustomersSync(tid, updated);
   if (altId) {
     setSalonCustomersSync(altId, updated);
   }
 
-  // 2. Salva in Cloud SQL PostgreSQL DataConnect
-  try {
-    await createCustomer(dataConnect, {
-      tenantId: tid,
-      firstName: customerItem.firstName,
-      lastName: customerItem.lastName,
-      phone: customerItem.phone,
-      email: customerItem.email || undefined,
-      birthday: customerItem.birthday || undefined,
-      technicalNotes: customerItem.technicalNotes || undefined
-    });
-  } catch (dcErr) {
-    console.warn("Nota inserimento cliente DataConnect:", dcErr);
+  // 2. Salva in Cloud SQL PostgreSQL DataConnect (se non era già esistente in DataConnect)
+  if (!match) {
+    try {
+      await createCustomer(dataConnect, {
+        tenantId: tid,
+        firstName: customerItem.firstName,
+        lastName: customerItem.lastName,
+        phone: customerItem.phone,
+        email: customerItem.email || undefined,
+        birthday: customerItem.birthday || undefined,
+        technicalNotes: customerItem.technicalNotes || undefined
+      });
+    } catch (dcErr) {
+      console.warn("Nota inserimento cliente DataConnect:", dcErr);
+    }
   }
 
   // 3. Salva in Cloud Firestore (/saloni/{tid}/clienti/{customerId}) e (/saloni/{altId}/clienti)
@@ -222,7 +366,6 @@ export async function saveSalonCustomer(
   }
 
   // 4. Se il cliente ha una mail, crea/aggiorna anche il profilo utente globale in Firestore (/users)
-  // con role 'cliente' e collegato all'elenco dei saloni associati
   if (customerItem.email) {
     try {
       const userDocId = getSalonTenantId(customerItem.email.toLowerCase());
@@ -258,8 +401,47 @@ export async function saveSalonCustomer(
 }
 
 /**
+ * Elimina un cliente dal database locale e Firestore
+ */
+export async function deleteSalonCustomer(
+  tenantId: string,
+  customerId: string,
+  alternateId?: string
+): Promise<boolean> {
+  if (!tenantId && !alternateId) return false;
+  const tid = getSalonTenantId(tenantId || alternateId);
+  const altId = alternateId && alternateId !== tid ? alternateId : tenantId !== tid ? tenantId : null;
+
+  // 1. Rimuovi da LocalStorage
+  const current = getSalonCustomersSync(tid).filter((c) => c.id !== customerId);
+  setSalonCustomersSync(tid, current);
+  if (altId) {
+    const currentAlt = getSalonCustomersSync(altId).filter((c) => c.id !== customerId);
+    setSalonCustomersSync(altId, currentAlt);
+  }
+
+  // 2. Rimuovi da Cloud Firestore
+  try {
+    const docRef = doc(db, "saloni", tid, "clienti", customerId);
+    await deleteDoc(docRef);
+    if (altId) {
+      const altDocRef = doc(db, "saloni", altId, "clienti", customerId);
+      await deleteDoc(altDocRef);
+    }
+  } catch (fsErr) {
+    console.warn("Nota eliminazione cliente Firestore:", fsErr);
+  }
+
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("trimmy-data-updated"));
+  }
+
+  return true;
+}
+
+/**
  * Assicura l'esistenza di un'anagrafica cliente legata specificamente a questo salone
- * per le prenotazioni online (evita ID demo hardcoded e garantisce isolamento tenant)
+ * per le prenotazioni online (evita ID demo hardcoded e garantisce isolamento tenant e zero duplicati)
  */
 export async function ensureCustomerForBooking(
   tenantId: string,
@@ -277,28 +459,34 @@ export async function ensureCustomerForBooking(
   const tid = getSalonTenantId(tenantId || alternateId);
   const altId = alternateId && alternateId !== tid ? alternateId : tenantId !== tid ? tenantId : null;
 
-  // Cerca prima tra i clienti già presenti per questo salone
+  // Cerca prima tra i clienti già presenti per questo salone usando isSameCustomer
   const existing = await fetchSalonCustomers(tid, altId || undefined);
-  const cleanEmail = clientData.email?.trim().toLowerCase();
-  const cleanPhone = clientData.phone?.replace(/\s+/g, "");
 
-  const match = existing.find((c) => {
-    if (cleanEmail && c.email && c.email.trim().toLowerCase() === cleanEmail) return true;
-    if (cleanPhone && c.phone && c.phone.replace(/\s+/g, "") === cleanPhone) return true;
-    return false;
-  });
+  const match = existing.find((c) =>
+    isSameCustomer(c, {
+      firstName: clientData.firstName,
+      lastName: clientData.lastName,
+      phone: clientData.phone,
+      email: clientData.email
+    })
+  );
 
   if (match) {
     return match;
   }
 
   // Se non esiste ancora per questo salone, crealo associandolo sia al tenantId che ad alternateId
-  return await saveSalonCustomer(tid, {
-    id: clientData.uid || generateCustomerUuid(),
-    firstName: clientData.firstName,
-    lastName: clientData.lastName,
-    phone: clientData.phone,
-    email: clientData.email || null,
-    technicalNotes: "Cliente registrato tramite prenotazione online Trimmy"
-  }, altId || undefined);
+  return await saveSalonCustomer(
+    tid,
+    {
+      id: clientData.uid || generateCustomerUuid(),
+      firstName: clientData.firstName,
+      lastName: clientData.lastName,
+      phone: clientData.phone,
+      email: clientData.email || null,
+      technicalNotes: "Cliente registrato tramite prenotazione online Trimmy"
+    },
+    altId || undefined
+  );
 }
+
