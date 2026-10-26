@@ -28,6 +28,7 @@ import {
 import { getUserProfile, fetchUserProfile } from "@/lib/user-profile";
 import { addSalonNotification } from "@/lib/salon-notifications";
 import { sendNotification } from "@/lib/notifications-service";
+import { parseDateSafe } from "@/lib/date-utils";
 import { 
   Plus, 
   X, 
@@ -98,6 +99,7 @@ export default function AgendaPage() {
   const [formDate, setFormDate] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
+  const [salonNameState, setSalonNameState] = useState<string>("Salone");
 
   // Inizializza data corrente lato client
   useEffect(() => {
@@ -130,6 +132,7 @@ export default function AgendaPage() {
       try {
         const profile = await fetchUserProfile(currentUser!.uid) || getUserProfile(currentUser!.uid);
         const salonName = profile?.salonName || currentUser!.displayName || "Il Mio Salone";
+        setSalonNameState(salonName);
 
         // Assicura l'esistenza del salone in PostgreSQL con il piano reale
         await ensureSalonTenant(currentUser!.uid, salonName, profile?.planType || "PRO");
@@ -1204,7 +1207,7 @@ export default function AgendaPage() {
                         try {
                           await sendNotification({
                             tenantId: currentUser.uid,
-                            salonName: currentProfile?.salonName || "Salone",
+                            salonName: salonNameState,
                             appointmentId: selectedAppt.id,
                             customerName: `${selectedAppt.customer.firstName} ${selectedAppt.customer.lastName}`,
                             customerPhone: selectedAppt.customer.phone,

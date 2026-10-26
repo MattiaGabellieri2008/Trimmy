@@ -244,9 +244,9 @@ export default function BookingWizardModal({
       salonAddress: salon.address,
       salonCity: salon.city,
       salonPhone: salon.phone,
-      serviceId: activeService.id,
+      serviceId: String(activeService.id),
       serviceName: activeService.name,
-      staffId: activeStaff.id,
+      staffId: String(activeStaff.id),
       staffName: activeStaff.fullName,
       price: activeService.price,
       durationMinutes: activeService.durationMinutes,
@@ -287,9 +287,9 @@ export default function BookingWizardModal({
           phone: customerRecord.phone,
           email: customerRecord.email
         },
-        serviceId: activeService.id,
+        serviceId: String(activeService.id),
         service: {
-          id: activeService.id,
+          id: String(activeService.id),
           name: activeService.name,
           durationMinutes: activeService.durationMinutes,
           price: activeService.price
