@@ -23,7 +23,9 @@ import {
   fetchSalonAppointments, 
   saveSalonAppointment, 
   updateSalonAppointmentStatus, 
-  deleteSalonAppointment 
+  deleteSalonAppointment,
+  rescheduleSalonAppointment,
+  SlotConflictError
 } from "@/lib/appointments-service";
 import { getUserProfile, fetchUserProfile } from "@/lib/user-profile";
 import { addSalonNotification } from "@/lib/salon-notifications";
@@ -48,7 +50,12 @@ import {
   CalendarRange,
   AlertCircle,
   MessageSquare,
-  Phone
+  Phone,
+  GripVertical,
+  Undo2,
+  Clock3,
+  Sparkles,
+  AlertTriangle
 } from "lucide-react";
 
 const TIME_SLOTS = [
@@ -100,6 +107,52 @@ export default function AgendaPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [salonNameState, setSalonNameState] = useState<string>("Salone");
+
+  // ─── DRAG & DROP & RESIZE STATE ───
+  const [draggingAppt, setDraggingAppt] = useState<GetDailyAppointmentsData["appointments"][0] | null>(null);
+  const [dragOverSlot, setDragOverSlot] = useState<{
+    type: "daily" | "weekly" | "staff";
+    time?: string;
+    day?: Date;
+    staffId?: string;
+    staffName?: string;
+  } | null>(null);
+
+  // Resize State (durata trattamento)
+  const [resizingAppt, setResizingAppt] = useState<{
+    appt: GetDailyAppointmentsData["appointments"][0];
+    startY: number;
+    initialDuration: number;
+    initialEndTime: string;
+    currentDuration: number;
+  } | null>(null);
+
+  // Action Toast con Undo & Notifica Cliente
+  const [actionToast, setActionToast] = useState<{
+    id: string;
+    message: string;
+    type: "success" | "error" | "info";
+    undoData?: {
+      apptId: string;
+      prevStartTime: string;
+      prevEndTime: string;
+      prevStaffId: string;
+      prevStaffName: string;
+      prevStaffRole: string;
+      prevDuration: number;
+    };
+    customerNotice?: {
+      customerName: string;
+      customerPhone?: string;
+      serviceName: string;
+      newDateStr: string;
+      newTimeStr: string;
+      staffName: string;
+      appointmentId: string;
+    };
+  } | null>(null);
+
+  const [toastNotifSent, setToastNotifSent] = useState<string | null>(null);
 
   // Inizializza data corrente lato client
   useEffect(() => {
@@ -624,6 +677,306 @@ export default function AgendaPage() {
     }
   };
 
+  // ─── RESCHEDULE & UNDO CORE LOGIC ───
+  const handleReschedule = async (
+    targetAppt: GetDailyAppointmentsData["appointments"][0],
+    newStartTime: string,
+    newEndTime: string,
+    targetStaffId?: string,
+    targetStaffName?: string,
+    targetStaffRole?: string,
+    newDurationMinutes?: number
+  ) => {
+    // 1. Memorizza dati precedenti per Annulla
+    const prevData = {
+      apptId: targetAppt.id,
+      prevStartTime: targetAppt.startTime,
+      prevEndTime: targetAppt.endTime,
+      prevStaffId: targetAppt.staff.id,
+      prevStaffName: targetAppt.staff.fullName,
+      prevStaffRole: (targetAppt.staff as any)?.role || "Staff",
+      prevDuration: targetAppt.service.durationMinutes
+    };
+
+    const finalStaffId = targetStaffId || targetAppt.staff.id;
+    const finalStaffName = targetStaffName || targetAppt.staff.fullName;
+    const finalStaffRole = targetStaffRole || (targetAppt.staff as any)?.role || "Staff";
+    const finalDuration = newDurationMinutes || targetAppt.service.durationMinutes;
+
+    // 2. Aggiornamento Ottimistico UI (0ms di latenza visiva)
+    setAppuntamenti((prev) =>
+      prev.map((a) =>
+        a.id === targetAppt.id
+          ? {
+              ...a,
+              startTime: newStartTime,
+              endTime: newEndTime,
+              staff: {
+                id: finalStaffId,
+                fullName: finalStaffName,
+                role: finalStaffRole
+              },
+              service: {
+                ...a.service,
+                durationMinutes: finalDuration
+              }
+            }
+          : a
+      )
+    );
+
+    // 3. Esegui la sincronizzazione su Firestore & Cloud SQL
+    try {
+      await rescheduleSalonAppointment({
+        tenantId: salonTenantId,
+        salonRawId: currentUser?.uid,
+        appointmentId: targetAppt.id,
+        newStartTime,
+        newEndTime,
+        newStaffId: finalStaffId,
+        newStaffName: finalStaffName,
+        newStaffRole: finalStaffRole,
+        newDurationMinutes: finalDuration
+      });
+
+      const d = new Date(newStartTime);
+      const newTimeStr = d.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" });
+      const newDateFormatted = d.toLocaleDateString("it-IT", { weekday: "short", day: "numeric", month: "short" });
+
+      setActionToast({
+        id: `toast-${Date.now()}`,
+        message: `Spostato alle ${newTimeStr} con ${finalStaffName}`,
+        type: "success",
+        undoData: prevData,
+        customerNotice: targetAppt.customer?.phone ? {
+          customerName: `${targetAppt.customer.firstName} ${targetAppt.customer.lastName}`,
+          customerPhone: targetAppt.customer.phone,
+          serviceName: targetAppt.service.name,
+          newDateStr: newDateFormatted,
+          newTimeStr,
+          staffName: finalStaffName,
+          appointmentId: targetAppt.id
+        } : undefined
+      });
+      setToastNotifSent(null);
+    } catch (err: any) {
+      console.error("Errore spostamento appuntamento:", err);
+      // Rollback stato ottimistico
+      setAppuntamenti((prev) =>
+        prev.map((a) => (a.id === targetAppt.id ? targetAppt : a))
+      );
+
+      setActionToast({
+        id: `error-${Date.now()}`,
+        message: err instanceof SlotConflictError ? err.message : (err?.message || "Errore durante lo spostamento dell'appuntamento."),
+        type: "error"
+      });
+    }
+  };
+
+  const handleUndo = async () => {
+    if (!actionToast?.undoData) return;
+    const { apptId, prevStartTime, prevEndTime, prevStaffId, prevStaffName, prevStaffRole, prevDuration } = actionToast.undoData;
+    setActionToast(null);
+
+    const currentItem = appuntamenti.find((a) => a.id === apptId);
+    if (!currentItem) return;
+
+    // Rollback ottimistico
+    setAppuntamenti((prev) =>
+      prev.map((a) =>
+        a.id === apptId
+          ? {
+              ...a,
+              startTime: prevStartTime,
+              endTime: prevEndTime,
+              staff: {
+                id: prevStaffId,
+                fullName: prevStaffName,
+                role: prevStaffRole
+              },
+              service: {
+                ...a.service,
+                durationMinutes: prevDuration
+              }
+            }
+          : a
+      )
+    );
+
+    try {
+      await rescheduleSalonAppointment({
+        tenantId: salonTenantId,
+        salonRawId: currentUser?.uid,
+        appointmentId: apptId,
+        newStartTime: prevStartTime,
+        newEndTime: prevEndTime,
+        newStaffId: prevStaffId,
+        newStaffName: prevStaffName,
+        newStaffRole: prevStaffRole,
+        newDurationMinutes: prevDuration
+      });
+
+      setActionToast({
+        id: `undo-success-${Date.now()}`,
+        message: "Spostamento annullato: appuntamento ripristinato.",
+        type: "info"
+      });
+    } catch (e: any) {
+      console.error("Errore ripristino:", e);
+    }
+  };
+
+  // ─── DROP ON DAILY TIME SLOT ───
+  const handleDropOnDailySlot = (timeSlot: string) => {
+    if (!draggingAppt || !selectedDate) return;
+    const [h, m] = timeSlot.split(":").map(Number);
+    const newStart = new Date(selectedDate);
+    newStart.setHours(h, m, 0, 0);
+
+    const duration = draggingAppt.service.durationMinutes || 30;
+    const newEnd = new Date(newStart.getTime() + duration * 60000);
+
+    handleReschedule(
+      draggingAppt,
+      newStart.toISOString(),
+      newEnd.toISOString(),
+      draggingAppt.staff.id,
+      draggingAppt.staff.fullName,
+      (draggingAppt.staff as any)?.role || "Staff",
+      duration
+    );
+    setDraggingAppt(null);
+    setDragOverSlot(null);
+  };
+
+  // ─── DROP ON WEEKLY DAY ───
+  const handleDropOnWeeklyDay = (targetDay: Date) => {
+    if (!draggingAppt) return;
+    const origStart = new Date(draggingAppt.startTime);
+    const newStart = new Date(targetDay);
+    newStart.setHours(origStart.getHours(), origStart.getMinutes(), 0, 0);
+
+    const duration = draggingAppt.service.durationMinutes || 30;
+    const newEnd = new Date(newStart.getTime() + duration * 60000);
+
+    handleReschedule(
+      draggingAppt,
+      newStart.toISOString(),
+      newEnd.toISOString(),
+      draggingAppt.staff.id,
+      draggingAppt.staff.fullName,
+      (draggingAppt.staff as any)?.role || "Staff",
+      duration
+    );
+    setDraggingAppt(null);
+    setDragOverSlot(null);
+  };
+
+  // ─── DROP ON STAFF COLUMN ───
+  const handleDropOnStaff = (staffId: string, staffName: string, staffRole?: string) => {
+    if (!draggingAppt) return;
+    handleReschedule(
+      draggingAppt,
+      draggingAppt.startTime,
+      draggingAppt.endTime,
+      staffId,
+      staffName,
+      staffRole || "Staff",
+      draggingAppt.service.durationMinutes
+    );
+    setDraggingAppt(null);
+    setDragOverSlot(null);
+  };
+
+  // ─── RESIZE LOGIC (POINTER EVENTS) ───
+  const handleResizeStart = (e: React.PointerEvent, appt: GetDailyAppointmentsData["appointments"][0]) => {
+    e.stopPropagation();
+    e.preventDefault();
+    try {
+      (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    } catch (_) {}
+
+    setResizingAppt({
+      appt,
+      startY: e.clientY,
+      initialDuration: appt.service.durationMinutes || 30,
+      initialEndTime: appt.endTime,
+      currentDuration: appt.service.durationMinutes || 30
+    });
+  };
+
+  const handleResizeMove = (e: React.PointerEvent) => {
+    if (!resizingAppt) return;
+    const deltaY = e.clientY - resizingAppt.startY;
+    // 24px ogni scatto di 15 minuti
+    const steps = Math.round(deltaY / 24);
+    const newDuration = Math.max(15, Math.min(240, resizingAppt.initialDuration + steps * 15));
+    if (newDuration !== resizingAppt.currentDuration) {
+      setResizingAppt((prev) => (prev ? { ...prev, currentDuration: newDuration } : null));
+    }
+  };
+
+  const handleResizeEnd = (e: React.PointerEvent) => {
+    if (!resizingAppt) return;
+    try {
+      (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+    } catch (_) {}
+
+    const { appt, initialDuration, currentDuration } = resizingAppt;
+    setResizingAppt(null);
+
+    if (currentDuration !== initialDuration) {
+      const start = new Date(appt.startTime);
+      const newEnd = new Date(start.getTime() + currentDuration * 60000);
+      handleReschedule(
+        appt,
+        appt.startTime,
+        newEnd.toISOString(),
+        appt.staff.id,
+        appt.staff.fullName,
+        (appt.staff as any)?.role || "Staff",
+        currentDuration
+      );
+    }
+  };
+
+  // ─── NOTIFICHE CLIENTE DI CAMBIO ORARIO ───
+  const handleSendWhatsAppNotice = (notice: NonNullable<typeof actionToast>["customerNotice"]) => {
+    if (!notice || !notice.customerPhone) return;
+    const cleanPhone = notice.customerPhone.replace(/[^0-9+]/g, "");
+    const msg = `Ciao ${notice.customerName}, ti confermiamo che il tuo appuntamento per "${notice.serviceName}" presso ${salonNameState} è stato riprogrammato a ${notice.newDateStr} alle ore ${notice.newTimeStr} con ${notice.staffName}. Per qualsiasi esigenza siamo a tua disposizione!`;
+    const url = `https://wa.me/${cleanPhone.startsWith("+") ? cleanPhone.slice(1) : cleanPhone}?text=${encodeURIComponent(msg)}`;
+    window.open(url, "_blank");
+    setToastNotifSent("WhatsApp aperto ✓");
+  };
+
+  const handleSendPushNotice = async (notice: NonNullable<typeof actionToast>["customerNotice"]) => {
+    if (!notice) return;
+    try {
+      await sendNotification({
+        tenantId: salonTenantId,
+        salonName: salonNameState,
+        appointmentId: notice.appointmentId,
+        customerName: notice.customerName,
+        customerPhone: notice.customerPhone,
+        type: "CONFIRMATION",
+        title: "📅 Appuntamento Riprogrammato",
+        customMessage: `Il tuo appuntamento per ${notice.serviceName} è stato spostato a ${notice.newDateStr} alle ${notice.newTimeStr} con ${notice.staffName}.`,
+        templateParams: {
+          servizio: notice.serviceName,
+          operatore: notice.staffName,
+          data: notice.newDateStr,
+          ora: notice.newTimeStr
+        }
+      });
+      setToastNotifSent("Notifica push inviata ✓");
+    } catch (e) {
+      console.warn("Nota invio notifica:", e);
+      setToastNotifSent("Invio notifica non riuscito");
+    }
+  };
+
   const handleLogout = async () => {
     await auth.signOut();
   };
@@ -797,27 +1150,79 @@ export default function AgendaPage() {
                 return apptDate.getDate() === selectedDate.getDate() && apptDate.getHours() === currentHour;
               });
 
+              const isSlotHovered = dragOverSlot?.type === "daily" && dragOverSlot?.time === time;
+
               return (
-                <div key={time} className="grid grid-cols-12 min-h-[82px] sm:min-h-[92px] group hover:bg-zinc-50/40 transition-colors">
+                <div 
+                  key={time} 
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = "move";
+                    if (dragOverSlot?.time !== time || dragOverSlot?.type !== "daily") {
+                      setDragOverSlot({ type: "daily", time, day: selectedDate });
+                    }
+                  }}
+                  onDragLeave={(e) => {
+                    if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+                    setDragOverSlot(null);
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    handleDropOnDailySlot(time);
+                  }}
+                  className={`grid grid-cols-12 min-h-[82px] sm:min-h-[92px] group transition-all ${
+                    isSlotHovered ? "bg-emerald-50/70 ring-2 ring-emerald-500/40 border-emerald-400" : "hover:bg-zinc-50/40"
+                  }`}
+                >
                   <div className="col-span-3 sm:col-span-2 md:col-span-1 border-r border-zinc-100 flex items-start justify-center pt-2.5 sm:pt-3 relative bg-zinc-50/20">
-                    <span className="text-[10px] sm:text-[11px] font-mono font-medium text-zinc-400 bg-white px-1 sm:px-1.5 py-0.5 rounded border border-zinc-200/60">
+                    <span className={`text-[10px] sm:text-[11px] font-mono font-medium px-1 sm:px-1.5 py-0.5 rounded border transition-colors ${
+                      isSlotHovered ? "bg-emerald-600 text-white border-emerald-600" : "text-zinc-400 bg-white border-zinc-200/60"
+                    }`}>
                       {time}
                     </span>
                   </div>
 
                   <div className="col-span-9 sm:col-span-10 md:col-span-11 p-2 flex flex-wrap gap-2.5 sm:gap-3 items-start relative">
+                    {/* Indicatore visivo di drop */}
+                    {isSlotHovered && draggingAppt && (
+                      <div className="w-full py-2 px-3 bg-emerald-100/90 border-2 border-dashed border-emerald-400 rounded-xl text-emerald-900 text-xs font-semibold flex items-center justify-between animate-pulse">
+                        <span className="flex items-center gap-1.5">
+                          <Sparkles className="w-4 h-4 text-emerald-600 shrink-0" />
+                          Sposta <strong>{draggingAppt.customer.firstName}</strong> alle <strong>{time}</strong>
+                        </span>
+                        <span className="text-[11px] text-emerald-700 bg-emerald-200/80 px-2 py-0.5 rounded-full font-mono">
+                          {draggingAppt.service.durationMinutes}m
+                        </span>
+                      </div>
+                    )}
+
                     {slotAppointments.map((appt) => {
                       const startTimeStr = new Date(appt.startTime).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" });
                       const endTimeStr = new Date(appt.endTime).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" });
                       const isCompleted = appt.status === "COMPLETED";
                       const isCancelled = appt.status === "CANCELLED";
+                      const isBeingDragged = draggingAppt?.id === appt.id;
+                      const isResizingThis = resizingAppt?.appt.id === appt.id;
+                      const displayDuration = isResizingThis ? resizingAppt.currentDuration : appt.service.durationMinutes;
 
                       return (
                         <div 
                           key={appt.id} 
+                          draggable={!isCancelled}
+                          onDragStart={(e) => {
+                            e.dataTransfer.setData("text/plain", appt.id);
+                            e.dataTransfer.effectAllowed = "move";
+                            setDraggingAppt(appt);
+                          }}
+                          onDragEnd={() => {
+                            setDraggingAppt(null);
+                            setDragOverSlot(null);
+                          }}
                           onClick={() => setSelectedAppt(appt)}
-                          className={`w-full sm:w-auto sm:min-w-[240px] sm:max-w-[340px] border rounded-xl p-3 shadow-xs hover:shadow-md transition-all cursor-pointer text-left relative overflow-hidden ${
-                            isCompleted 
+                          className={`group/card select-none w-full sm:w-auto sm:min-w-[240px] sm:max-w-[340px] border rounded-xl p-3 shadow-xs hover:shadow-md transition-all cursor-pointer text-left relative overflow-hidden ${
+                            isBeingDragged
+                              ? "opacity-30 scale-95 ring-2 ring-zinc-500 border-dashed"
+                              : isCompleted 
                               ? "bg-zinc-50 border-zinc-200 opacity-75"
                               : isCancelled
                               ? "bg-red-50/30 border-red-200/60 opacity-60 line-through"
@@ -828,14 +1233,32 @@ export default function AgendaPage() {
                             isCompleted ? "bg-emerald-500" : isCancelled ? "bg-red-400" : "bg-zinc-900"
                           }`} />
 
+                          {/* Badge durata dinamica durante il resize */}
+                          {isResizingThis && (
+                            <span className="absolute top-1.5 right-1.5 bg-zinc-900 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-md flex items-center gap-1 animate-pulse z-10">
+                              <Clock3 className="w-3 h-3 text-emerald-400" />
+                              {displayDuration}m
+                            </span>
+                          )}
+
                           <div className="flex justify-between items-start gap-2 pl-1.5">
-                            <div className="min-w-0 flex-1">
-                              <p className="text-[13px] font-semibold text-zinc-900 leading-tight truncate">
-                                {appt.service.name}
-                              </p>
-                              <p className="text-[12px] font-medium text-zinc-600 mt-0.5 truncate">
-                                {appt.customer.firstName} {appt.customer.lastName}
-                              </p>
+                            <div className="flex items-start gap-1.5 min-w-0 flex-1">
+                              {!isCancelled && (
+                                <span 
+                                  className="cursor-grab active:cursor-grabbing text-zinc-300 group-hover/card:text-zinc-600 transition-colors p-0.5 rounded -ml-1 shrink-0" 
+                                  title="Trascina per spostare orario o staff"
+                                >
+                                  <GripVertical className="w-3.5 h-3.5" />
+                                </span>
+                              )}
+                              <div className="min-w-0 flex-1">
+                                <p className="text-[13px] font-semibold text-zinc-900 leading-tight truncate">
+                                  {appt.service.name}
+                                </p>
+                                <p className="text-[12px] font-medium text-zinc-600 mt-0.5 truncate">
+                                  {appt.customer.firstName} {appt.customer.lastName}
+                                </p>
+                              </div>
                             </div>
                             <span className="text-[10px] font-semibold text-zinc-500 bg-zinc-100 px-1.5 py-0.5 rounded shrink-0">
                               {startTimeStr} - {endTimeStr}
@@ -857,11 +1280,24 @@ export default function AgendaPage() {
                               {appt.status}
                             </span>
                           </div>
+
+                          {/* Maniglia di Resize (allunga/accorcia durata) */}
+                          {!isCancelled && (
+                            <div 
+                              onPointerDown={(e) => handleResizeStart(e, appt)}
+                              onPointerMove={handleResizeMove}
+                              onPointerUp={handleResizeEnd}
+                              className="absolute bottom-0 left-0 right-0 h-3 cursor-ns-resize flex items-center justify-center opacity-0 group-hover/card:opacity-100 transition-opacity bg-gradient-to-t from-zinc-200/50 to-transparent"
+                              title="Trascina per allungare o accorciare la durata (+/- 15 min)"
+                            >
+                              <div className="w-8 h-1 bg-zinc-400/80 rounded-full" />
+                            </div>
+                          )}
                         </div>
                       );
                     })}
 
-                    {slotAppointments.length === 0 && (
+                    {slotAppointments.length === 0 && !isSlotHovered && (
                       <div 
                         onClick={() => {
                           setFormTime(time);
@@ -925,28 +1361,90 @@ export default function AgendaPage() {
                 return apptDate.toDateString() === d.toDateString();
               });
 
+              const isDayHovered = dragOverSlot?.type === "weekly" && dragOverSlot?.day?.toDateString() === d.toDateString();
+
               return (
-                <div key={d.toISOString()} className="p-2 space-y-2 bg-zinc-50/10">
+                <div 
+                  key={d.toISOString()} 
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = "move";
+                    if (dragOverSlot?.type !== "weekly" || dragOverSlot?.day?.toDateString() !== d.toDateString()) {
+                      setDragOverSlot({ type: "weekly", day: d });
+                    }
+                  }}
+                  onDragLeave={(e) => {
+                    if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+                    setDragOverSlot(null);
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    handleDropOnWeeklyDay(d);
+                  }}
+                  className={`p-2 space-y-2 transition-all ${
+                    isDayHovered ? "bg-emerald-50/70 ring-2 ring-emerald-500/50 rounded-lg border-emerald-400" : "bg-zinc-50/10"
+                  }`}
+                >
+                  {/* Drop indicator banner */}
+                  {isDayHovered && draggingAppt && (
+                    <div className="p-1.5 bg-emerald-100 border border-emerald-300 rounded text-emerald-800 text-[10px] font-bold text-center flex items-center justify-center gap-1 animate-pulse">
+                      <Sparkles className="w-3 h-3 text-emerald-600" />
+                      Sposta a {d.toLocaleDateString("it-IT", { weekday: "short", day: "numeric" })}
+                    </div>
+                  )}
+
                   {dayAppointments.map((appt) => {
                     const startTimeStr = new Date(appt.startTime).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" });
                     const isCompleted = appt.status === "COMPLETED";
                     const isCancelled = appt.status === "CANCELLED";
+                    const isBeingDragged = draggingAppt?.id === appt.id;
+                    const isResizingThis = resizingAppt?.appt.id === appt.id;
+                    const displayDuration = isResizingThis ? resizingAppt.currentDuration : appt.service.durationMinutes;
 
                     return (
                       <div
                         key={appt.id}
+                        draggable={!isCancelled}
+                        onDragStart={(e) => {
+                          e.dataTransfer.setData("text/plain", appt.id);
+                          e.dataTransfer.effectAllowed = "move";
+                          setDraggingAppt(appt);
+                        }}
+                        onDragEnd={() => {
+                          setDraggingAppt(null);
+                          setDragOverSlot(null);
+                        }}
                         onClick={() => setSelectedAppt(appt)}
-                        className={`p-2.5 rounded-lg border text-left shadow-xs hover:shadow-md transition-all cursor-pointer ${
-                          isCompleted 
+                        className={`group/card select-none relative p-2.5 rounded-lg border text-left shadow-xs hover:shadow-md transition-all cursor-pointer overflow-hidden ${
+                          isBeingDragged
+                            ? "opacity-30 scale-95 ring-2 ring-zinc-500 border-dashed"
+                            : isCompleted 
                             ? "bg-zinc-50 border-emerald-200 opacity-80" 
                             : isCancelled 
                             ? "bg-red-50/30 border-red-200 line-through opacity-60" 
                             : "bg-white border-zinc-200 hover:border-zinc-400"
                         }`}
                       >
+                        {isResizingThis && (
+                          <span className="absolute top-1 right-1 bg-zinc-900 text-white text-[9px] font-bold px-1.5 py-0.2 rounded-full shadow-md flex items-center gap-1 animate-pulse z-10">
+                            <Clock3 className="w-2.5 h-2.5 text-emerald-400" />
+                            {displayDuration}m
+                          </span>
+                        )}
+
                         <div className="flex justify-between items-center text-[10px] text-zinc-500 font-mono">
-                          <span>{startTimeStr}</span>
-                          <span>{appt.service.durationMinutes}m</span>
+                          <div className="flex items-center gap-1">
+                            {!isCancelled && (
+                              <span 
+                                className="cursor-grab active:cursor-grabbing text-zinc-300 group-hover/card:text-zinc-600 transition-colors -ml-1 shrink-0" 
+                                title="Trascina su un altro giorno"
+                              >
+                                <GripVertical className="w-3 h-3" />
+                              </span>
+                            )}
+                            <span>{startTimeStr}</span>
+                          </div>
+                          <span>{displayDuration}m</span>
                         </div>
                         <p className="text-xs font-semibold text-zinc-900 truncate mt-1">
                           {appt.service.name}
@@ -957,11 +1455,24 @@ export default function AgendaPage() {
                         <p className="text-[10px] text-zinc-400 truncate mt-0.5">
                           {appt.staff.fullName}
                         </p>
+
+                        {/* Maniglia di Resize */}
+                        {!isCancelled && (
+                          <div 
+                            onPointerDown={(e) => handleResizeStart(e, appt)}
+                            onPointerMove={handleResizeMove}
+                            onPointerUp={handleResizeEnd}
+                            className="absolute bottom-0 left-0 right-0 h-2.5 cursor-ns-resize flex items-center justify-center opacity-0 group-hover/card:opacity-100 transition-opacity bg-gradient-to-t from-zinc-200/50 to-transparent"
+                            title="Trascina per allungare o accorciare la durata (+/- 15 min)"
+                          >
+                            <div className="w-6 h-0.5 bg-zinc-400/80 rounded-full" />
+                          </div>
+                        )}
                       </div>
                     );
                   })}
 
-                  {dayAppointments.length === 0 && (
+                  {dayAppointments.length === 0 && !isDayHovered && (
                     <div 
                       onClick={() => {
                         setSelectedDate(d);
@@ -1083,38 +1594,115 @@ export default function AgendaPage() {
             <div className="grid min-h-[500px] divide-x divide-zinc-100" style={{ gridTemplateColumns: `repeat(${activeStaff.length}, minmax(0, 1fr))` }}>
               {activeStaff.map((st) => {
                 const staffAppointments = appuntamenti.filter((a) => a.staff.id === st.id);
+                const isStaffHovered = dragOverSlot?.type === "staff" && dragOverSlot?.staffId === st.id;
 
                 return (
-                  <div key={st.id} className="p-3 space-y-3 bg-zinc-50/10">
+                  <div 
+                    key={st.id} 
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      e.dataTransfer.dropEffect = "move";
+                      if (dragOverSlot?.type !== "staff" || dragOverSlot?.staffId !== st.id) {
+                        setDragOverSlot({ type: "staff", staffId: st.id, staffName: st.fullName });
+                      }
+                    }}
+                    onDragLeave={(e) => {
+                      if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+                      setDragOverSlot(null);
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      handleDropOnStaff(st.id, st.fullName, st.role);
+                    }}
+                    className={`p-3 space-y-3 transition-all ${
+                      isStaffHovered ? "bg-emerald-50/70 ring-2 ring-emerald-500/50 rounded-xl border-emerald-400" : "bg-zinc-50/10"
+                    }`}
+                  >
+                    {isStaffHovered && draggingAppt && (
+                      <div className="p-2 bg-emerald-100 border border-emerald-300 rounded-lg text-emerald-800 text-xs font-bold text-center animate-pulse flex items-center justify-center gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+                        Assegna a {st.fullName}
+                      </div>
+                    )}
+
                     {staffAppointments.map((appt) => {
                       const startTimeStr = new Date(appt.startTime).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" });
                       const endTimeStr = new Date(appt.endTime).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" });
                       const isCompleted = appt.status === "COMPLETED";
                       const isCancelled = appt.status === "CANCELLED";
+                      const isBeingDragged = draggingAppt?.id === appt.id;
+                      const isResizingThis = resizingAppt?.appt.id === appt.id;
+                      const displayDuration = isResizingThis ? resizingAppt.currentDuration : appt.service.durationMinutes;
 
                       return (
                         <div
                           key={appt.id}
+                          draggable={!isCancelled}
+                          onDragStart={(e) => {
+                            e.dataTransfer.setData("text/plain", appt.id);
+                            e.dataTransfer.effectAllowed = "move";
+                            setDraggingAppt(appt);
+                          }}
+                          onDragEnd={() => {
+                            setDraggingAppt(null);
+                            setDragOverSlot(null);
+                          }}
                           onClick={() => setSelectedAppt(appt)}
-                          className={`p-3 bg-white border rounded-xl shadow-xs hover:shadow-md transition-all cursor-pointer ${
-                            isCompleted ? "border-emerald-200 opacity-80" : isCancelled ? "border-red-200 line-through opacity-60" : "border-zinc-200"
+                          className={`group/card select-none relative p-3 bg-white border rounded-xl shadow-xs hover:shadow-md transition-all cursor-pointer overflow-hidden ${
+                            isBeingDragged
+                              ? "opacity-30 scale-95 ring-2 ring-zinc-500 border-dashed"
+                              : isCompleted 
+                              ? "border-emerald-200 opacity-80" 
+                              : isCancelled 
+                              ? "border-red-200 line-through opacity-60" 
+                              : "border-zinc-200 hover:border-zinc-400"
                           }`}
                         >
-                          <div className="flex justify-between items-start gap-1">
-                            <span className="text-[11px] font-mono font-medium text-zinc-500">
-                              {startTimeStr} - {endTimeStr}
+                          {isResizingThis && (
+                            <span className="absolute top-1.5 right-1.5 bg-zinc-900 text-white text-[9px] font-bold px-1.5 py-0.2 rounded-full shadow-md flex items-center gap-1 animate-pulse z-10">
+                              <Clock3 className="w-2.5 h-2.5 text-emerald-400" />
+                              {displayDuration}m
                             </span>
-                            <span className="text-[10px] font-semibold text-zinc-400 bg-zinc-100 px-1 py-0.5 rounded">
-                              {appt.service.durationMinutes}m
+                          )}
+
+                          <div className="flex justify-between items-start gap-1">
+                            <div className="flex items-center gap-1 min-w-0">
+                              {!isCancelled && (
+                                <span 
+                                  className="cursor-grab active:cursor-grabbing text-zinc-300 group-hover/card:text-zinc-600 transition-colors -ml-1 shrink-0" 
+                                  title="Trascina su un altro collaboratore"
+                                >
+                                  <GripVertical className="w-3.5 h-3.5" />
+                                </span>
+                              )}
+                              <span className="text-[11px] font-mono font-medium text-zinc-500">
+                                {startTimeStr} - {endTimeStr}
+                              </span>
+                            </div>
+                            <span className="text-[10px] font-semibold text-zinc-400 bg-zinc-100 px-1 py-0.5 rounded shrink-0">
+                              {displayDuration}m
                             </span>
                           </div>
                           <p className="font-semibold text-xs text-zinc-900 mt-1">{appt.service.name}</p>
                           <p className="text-xs text-zinc-600">{appt.customer.firstName} {appt.customer.lastName}</p>
+
+                          {/* Maniglia di Resize */}
+                          {!isCancelled && (
+                            <div 
+                              onPointerDown={(e) => handleResizeStart(e, appt)}
+                              onPointerMove={handleResizeMove}
+                              onPointerUp={handleResizeEnd}
+                              className="absolute bottom-0 left-0 right-0 h-3 cursor-ns-resize flex items-center justify-center opacity-0 group-hover/card:opacity-100 transition-opacity bg-gradient-to-t from-zinc-200/50 to-transparent"
+                              title="Trascina per allungare o accorciare la durata (+/- 15 min)"
+                            >
+                              <div className="w-8 h-1 bg-zinc-400/80 rounded-full" />
+                            </div>
+                          )}
                         </div>
                       );
                     })}
 
-                    {staffAppointments.length === 0 && (
+                    {staffAppointments.length === 0 && !isStaffHovered && (
                       <p className="text-[12px] text-zinc-400 text-center pt-8">
                         Nessun appuntamento
                       </p>
@@ -1124,6 +1712,79 @@ export default function AgendaPage() {
               })}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ─── FLOATING ACTION TOAST CON UNDO & PROMPT NOTIFICHE ─── */}
+      {actionToast && (
+        <div className="fixed bottom-6 right-6 z-50 max-w-md w-[calc(100vw-3rem)] bg-zinc-900 text-white rounded-2xl p-4 shadow-2xl border border-zinc-700/60 animate-in slide-in-from-bottom-5 duration-200">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
+                actionToast.type === "error" ? "bg-red-500/20 text-red-400" : "bg-emerald-500/20 text-emerald-400"
+              }`}>
+                {actionToast.type === "error" ? <AlertTriangle className="w-4 h-4" /> : <Check className="w-4 h-4" />}
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-zinc-100 truncate">
+                  {actionToast.type === "error" ? "Conflitto o Errore" : "Appuntamento Riprogrammato"}
+                </p>
+                <p className="text-[11px] text-zinc-300 mt-0.5 leading-tight">
+                  {actionToast.message}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1.5 shrink-0">
+              {actionToast.undoData && (
+                <button
+                  onClick={handleUndo}
+                  className="px-2.5 py-1 bg-white/10 hover:bg-white/20 text-white text-[11px] font-semibold rounded-lg flex items-center gap-1 transition-colors border border-white/10"
+                >
+                  <Undo2 className="w-3 h-3" />
+                  Annulla
+                </button>
+              )}
+              <button
+                onClick={() => setActionToast(null)}
+                className="p-1 hover:bg-white/10 rounded-lg text-zinc-400 hover:text-white transition-colors"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+
+          {/* Prompt Notifica Cliente */}
+          {actionToast.customerNotice && (
+            <div className="mt-3 pt-2.5 border-t border-zinc-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+              <span className="text-[11px] text-zinc-400">
+                Avvisa <strong>{actionToast.customerNotice.customerName}</strong>:
+              </span>
+              <div className="flex items-center gap-2">
+                {actionToast.customerNotice.customerPhone && (
+                  <button
+                    onClick={() => handleSendWhatsAppNotice(actionToast.customerNotice!)}
+                    className="px-2.5 py-1 bg-emerald-600/30 hover:bg-emerald-600/50 text-emerald-300 border border-emerald-500/30 rounded-lg text-[11px] font-semibold flex items-center gap-1 transition-colors"
+                  >
+                    <MessageSquare className="w-3 h-3" />
+                    WhatsApp
+                  </button>
+                )}
+                <button
+                  onClick={() => handleSendPushNotice(actionToast.customerNotice!)}
+                  className="px-2.5 py-1 bg-blue-600/30 hover:bg-blue-600/50 text-blue-300 border border-blue-500/30 rounded-lg text-[11px] font-semibold flex items-center gap-1 transition-colors"
+                >
+                  <Sparkles className="w-3 h-3" />
+                  Push
+                </button>
+                {toastNotifSent && (
+                  <span className="text-[10px] text-emerald-400 font-medium">
+                    {toastNotifSent}
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

@@ -789,3 +789,81 @@ export async function deleteSalonAppointment(
   }
 }
 
+
+
+/**
+ * Riprogramma un appuntamento spostandolo a un nuovo orario, data, operatore o modificandone la durata (resize),
+ * gestendo atomicamente il rilascio del vecchio schedule_lock e l'acquisizione del nuovo.
+ */
+export async function rescheduleSalonAppointment(params: {
+  tenantId: string;
+  salonRawId?: string;
+  appointmentId: string;
+  newStartTime: string; // ISO
+  newEndTime: string;   // ISO
+  newStaffId?: string;
+  newStaffName?: string;
+  newStaffRole?: string;
+  newDurationMinutes?: number;
+}): Promise<UnifiedAppointmentItem> {
+  const tid = getSalonTenantId(params.tenantId || params.salonRawId);
+  const rid = params.salonRawId || params.tenantId;
+
+  // 1. Trova l'appuntamento esistente (cache locale o Firestore)
+  const localList = getSalonAppointmentsSync(tid);
+  let existing = localList.find((a) => a.id === params.appointmentId);
+  if (!existing && rid) {
+    existing = getSalonAppointmentsSync(rid).find((a) => a.id === params.appointmentId);
+  }
+
+  if (!existing) {
+    const snap = await getDoc(doc(db, "saloni", tid, "appuntamenti", params.appointmentId));
+    if (snap.exists()) {
+      existing = snap.data() as UnifiedAppointmentItem;
+    } else {
+      throw new Error("Appuntamento da riprogrammare non trovato.");
+    }
+  }
+
+  const oldStaffId = existing.staffId || "staff-general";
+  const oldDateStr = getLocalDateString(existing.startTime);
+  const targetStaffId = params.newStaffId || oldStaffId;
+  const newDateStr = getLocalDateString(params.newStartTime);
+
+  // 2. Se l'operatore o la data sono cambiati, rilascia lo slot lock precedente
+  if (oldStaffId !== targetStaffId || oldDateStr !== newDateStr) {
+    await releaseSlotLock(tid, oldStaffId, oldDateStr, params.appointmentId);
+  }
+
+  // 3. Prepara l'oggetto appuntamento aggiornato
+  const updatedAppt: UnifiedAppointmentItem = {
+    ...existing,
+    startTime: params.newStartTime,
+    endTime: params.newEndTime,
+    staffId: targetStaffId,
+    staff: {
+      id: targetStaffId,
+      fullName: params.newStaffName || (targetStaffId === oldStaffId ? existing.staff.fullName : "Staff"),
+      role: params.newStaffRole || (targetStaffId === oldStaffId ? existing.staff.role : "Stylist")
+    },
+    service: {
+      ...existing.service,
+      durationMinutes: params.newDurationMinutes || existing.service.durationMinutes
+    }
+  };
+
+  // 4. Salva con transazione atomica anti-conflitto
+  try {
+    await saveSalonAppointment(updatedAppt);
+  } catch (err) {
+    // Se fallisce (es. SlotConflictError) e avevamo rilasciato il vecchio lock, ripristiniamo l'originale
+    if (oldStaffId !== targetStaffId || oldDateStr !== newDateStr) {
+      try {
+        await saveSalonAppointment(existing);
+      } catch (_) {}
+    }
+    throw err;
+  }
+
+  return updatedAppt;
+}
