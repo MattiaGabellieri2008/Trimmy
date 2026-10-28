@@ -12,6 +12,7 @@ import {
 import { getSalonTenantId } from "./tenant-helper";
 import { updateSalonAppointmentStatus } from "./appointments-service";
 import { addSalonNotification } from "./salon-notifications";
+import { decrementStockForCheckout } from "./inventory-store";
 
 export type PaymentMethod = "CASH" | "CARD" | "MIXED" | "SATISPAY" | "VOUCHER";
 
@@ -128,6 +129,13 @@ export async function saveCheckoutTransaction(
     } catch (e) {
       console.warn("Nota aggiornamento appuntamento saldato:", e);
     }
+  }
+
+  // 3.5 Scarico automatico immediato delle scorte di magazzino per i prodotti venduti
+  try {
+    await decrementStockForCheckout(tid, normalized.items, normalized.operatorName || "Staff Cassa");
+  } catch (e) {
+    console.warn("Nota scarico magazzino per transazione:", e);
   }
 
   // 4. Invia notifica di sistema per il salone

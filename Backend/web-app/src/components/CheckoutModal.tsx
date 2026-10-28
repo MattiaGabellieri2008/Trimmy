@@ -28,6 +28,7 @@ import {
   DEFAULT_RETAIL_PRODUCTS, 
   saveCheckoutTransaction 
 } from "@/lib/checkout-store";
+import { ProductItem, fetchSalonProducts } from "@/lib/inventory-store";
 
 interface CheckoutModalProps {
   isOpen: boolean;
@@ -74,6 +75,17 @@ export default function CheckoutModal({
   const [operatorName, setOperatorName] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [completedTx, setCompletedTx] = useState<CheckoutTransaction | null>(null);
+  const [inventoryProducts, setInventoryProducts] = useState<ProductItem[]>([]);
+
+  // Carica i prodotti del magazzino reale per la vendita al banco
+  useEffect(() => {
+    if (!isOpen || !tenantId) return;
+    fetchSalonProducts(tenantId).then((prods) => {
+      // Filtra i prodotti destinati alla rivendita
+      const retailOnly = prods.filter((p) => p.category === "RIVENDITA");
+      setInventoryProducts(retailOnly);
+    }).catch(() => {});
+  }, [isOpen, tenantId]);
 
   // Inizializza articoli
   useEffect(() => {
@@ -410,22 +422,69 @@ export default function CheckoutModal({
 
                 {/* Aggiunta Rapida Prodotti da Banco */}
                 <div className="space-y-1.5 pt-1">
-                  <span className="text-[10px] uppercase font-bold text-zinc-400 tracking-wider block">
-                    + Aggiungi Vendita Prodotto da Banco:
-                  </span>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] uppercase font-bold text-zinc-400 tracking-wider block">
+                      + Aggiungi Vendita Prodotto da Banco (Magazzino):
+                    </span>
+                    <span className="text-[10px] text-zinc-400">
+                      Giacenza sincronizzata live
+                    </span>
+                  </div>
                   <div className="flex flex-wrap gap-1.5">
-                    {DEFAULT_RETAIL_PRODUCTS.map((prod) => (
-                      <button
-                        key={prod.id}
-                        type="button"
-                        onClick={() => handleAddItem(prod)}
-                        className="px-2.5 py-1 bg-zinc-50 hover:bg-zinc-100 border border-zinc-200 rounded-lg text-[11px] font-medium text-zinc-700 flex items-center gap-1.5 transition-colors cursor-pointer"
-                      >
-                        <Plus className="w-3 h-3 text-zinc-500" />
-                        <span>{prod.name}</span>
-                        <strong className="text-zinc-900 font-bold">€{prod.price}</strong>
-                      </button>
-                    ))}
+                    {(inventoryProducts.length > 0 ? inventoryProducts : DEFAULT_RETAIL_PRODUCTS).map((prod: any) => {
+                      const isRealProduct = typeof prod.stockQuantity === "number";
+                      const stock = isRealProduct ? prod.stockQuantity : 10;
+                      const isOut = stock <= 0;
+                      const isLow = isRealProduct && stock <= prod.minStockThreshold && !isOut;
+                      const price = typeof prod.retailPrice === "number" ? prod.retailPrice : prod.price;
+                      const displayName = prod.brand ? `${prod.brand} ${prod.name}` : prod.name;
+
+                      return (
+                        <button
+                          key={prod.id}
+                          type="button"
+                          onClick={() => {
+                            if (isOut) {
+                              const confirmAdd = window.confirm(
+                                `⚠️ ATTENZIONE SOTTOSCORTA:\nIl prodotto "${displayName}" risulta ESAURITO in magazzino (0 ${prod.unit || "pz"}).\n\nVuoi aggiungerlo comunque allo scontrino cassa?`
+                              );
+                              if (!confirmAdd) return;
+                            }
+                            handleAddItem({
+                              id: prod.id,
+                              type: "PRODUCT",
+                              name: displayName,
+                              price,
+                              quantity: 1,
+                              operatorName: operatorName || undefined
+                            });
+                          }}
+                          className={`px-2.5 py-1 border rounded-lg text-[11px] font-medium flex items-center gap-1.5 transition-all cursor-pointer ${
+                            isOut
+                              ? "bg-red-50/80 border-red-200 text-red-700 hover:bg-red-100/80"
+                              : isLow
+                              ? "bg-amber-50/80 border-amber-200 text-amber-900 hover:bg-amber-100"
+                              : "bg-zinc-50 hover:bg-zinc-100 border-zinc-200 text-zinc-700"
+                          }`}
+                          title={isOut ? "Prodotto esaurito in magazzino" : isLow ? `Scorte basse: solo ${stock} rimasti` : `Giacenza: ${stock}`}
+                        >
+                          <Plus className={`w-3 h-3 ${isOut ? "text-red-500" : isLow ? "text-amber-600" : "text-zinc-500"}`} />
+                          <span className="truncate max-w-[150px]">{displayName}</span>
+                          <strong className="text-zinc-900 font-bold">€{price.toFixed(2)}</strong>
+                          {isRealProduct && (
+                            <span className={`text-[9px] px-1 py-0.2 rounded font-bold ${
+                              isOut 
+                                ? "bg-red-100 text-red-800" 
+                                : isLow 
+                                ? "bg-amber-200/80 text-amber-900" 
+                                : "bg-zinc-200/70 text-zinc-600"
+                            }`}>
+                              {isOut ? "0 pz" : `${stock} pz`}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               </div>

@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Calendar, Users, Sparkles, BarChart2, LogOut, Settings, CreditCard, Shield, ChevronUp, X } from "lucide-react";
+import { Calendar, Users, Sparkles, BarChart2, Package, LogOut, Settings, CreditCard, Shield, ChevronUp, X } from "lucide-react";
 import { auth } from "@/lib/firebase";
 import { onAuthStateChanged, signOut, User as FirebaseUser } from "firebase/auth";
 import { clearUserProfileCache } from "@/lib/user-profile";
@@ -48,6 +48,7 @@ export function Sidebar({ onClose, isMobile = false }: SidebarProps) {
     { name: "Agenda", href: "/", icon: Calendar },
     { name: "Clienti", href: "/clienti", icon: Users },
     { name: "Trattamenti", href: "/trattamenti", icon: Sparkles },
+    { name: "Magazzino", href: "/magazzino", icon: Package },
     { name: "Statistiche", href: "/statistiche", icon: BarChart2 },
   ];
 
