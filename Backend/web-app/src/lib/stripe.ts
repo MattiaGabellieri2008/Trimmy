@@ -51,3 +51,4 @@ export function getAppBaseUrl(): string {
   }
   return "http://localhost:3000";
 }
+

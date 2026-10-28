@@ -35,8 +35,13 @@ import {
   ArrowUpDown,
   Filter,
   CheckCheck,
-  LocateFixed
+  LocateFixed,
+  Map as MapIcon,
+  LayoutGrid,
+  Eye
 } from "lucide-react";
+import Link from "next/link";
+import dynamic from "next/dynamic";
 import { 
   INITIAL_SALONS, 
   SalonListing, 
@@ -58,6 +63,16 @@ import BookingWizardModal from "@/components/BookingWizardModal";
 import ReviewModal from "@/components/ReviewModal";
 import SalonShareModal from "@/components/SalonShareModal";
 import { ClientSidebar, ClientTabType } from "@/components/ClientSidebar";
+
+const MarketplaceMap = dynamic(() => import("@/components/MarketplaceMap"), {
+  ssr: false,
+  loading: () => (
+    <div className="w-full h-full min-h-[450px] bg-zinc-100 rounded-3xl flex items-center justify-center border border-zinc-200 text-xs text-zinc-500 font-medium">
+      <Loader2 className="w-5 h-5 animate-spin mr-2 text-zinc-400" />
+      Caricamento mappa OpenStreetMap...
+    </div>
+  )
+});
 
 type SortOption = "rating" | "reviews" | "price" | "name" | "distance";
 
@@ -82,6 +97,11 @@ export default function ClientePage() {
   const [selectedCategory, setSelectedCategory] = useState<string>("Tutti");
   const [selectedQuickFilter, setSelectedQuickFilter] = useState<string>("all");
   const [sortBy, setSortBy] = useState<SortOption>("rating");
+
+  // Modalità Vista Marketplace: "grid" (Griglia) o "split" (Mappa Split-View Treatwell/Airbnb)
+  const [viewMode, setViewMode] = useState<"grid" | "split">("grid");
+  const [hoveredSalonId, setHoveredSalonId] = useState<string | null>(null);
+  const [selectedMapSalon, setSelectedMapSalon] = useState<SalonListing | null>(null);
 
   // Geolocalizzazione "Vicino a Me"
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
@@ -687,13 +707,45 @@ export default function ClientePage() {
 
               {/* VISTA GRIGLIA SALONI ADERENTI */}
               <div className="space-y-4">
-                  <div className="flex items-center justify-between text-xs text-zinc-500 font-medium px-1">
-                    <span>Trovati <strong>{filteredSalons.length} saloni</strong> aderenti</span>
-                    {searchQuery && (
-                      <span className="text-zinc-700">
-                        Risultati per: &quot;<strong className="text-zinc-900">{searchQuery}</strong>&quot;
-                      </span>
-                    )}
+                  <div className="flex items-center justify-between text-xs text-zinc-500 font-medium px-1 flex-wrap gap-2">
+                    <div className="flex items-center gap-2">
+                      <span>Trovati <strong>{filteredSalons.length} saloni</strong> aderenti</span>
+                      {searchQuery && (
+                        <span className="text-zinc-700">
+                          per &quot;<strong className="text-zinc-900">{searchQuery}</strong>&quot;
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Toggle Switcher Griglia vs Mappa Split-View */}
+                    <div className="inline-flex items-center p-1 bg-zinc-100 rounded-2xl border border-zinc-200">
+                      <button
+                        type="button"
+                        onClick={() => setViewMode("grid")}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                          viewMode === "grid"
+                            ? "bg-white text-zinc-900 shadow-xs"
+                            : "text-zinc-500 hover:text-zinc-800"
+                        }`}
+                        title="Visualizzazione a griglia"
+                      >
+                        <LayoutGrid className="w-3.5 h-3.5" />
+                        <span>Griglia</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setViewMode("split")}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                          viewMode === "split"
+                            ? "bg-zinc-900 text-white shadow-xs"
+                            : "text-zinc-500 hover:text-zinc-800"
+                        }`}
+                        title="Mappa interattiva Split-View"
+                      >
+                        <MapIcon className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>Mappa Split-View</span>
+                      </button>
+                    </div>
                   </div>
 
                   {filteredSalons.length === 0 ? (
@@ -718,132 +770,176 @@ export default function ClientePage() {
                       </button>
                     </div>
                   ) : (
-                    <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
-                      {filteredSalons.map((salon) => {
-                        const isFav = favoriteIds.includes(salon.id);
-                        const matchReason = matchReasons[salon.id];
+                    <div className={viewMode === "split" ? "grid grid-cols-1 lg:grid-cols-12 gap-6 items-start" : ""}>
+                      
+                      {/* Lista Card Saloni */}
+                      <div className={
+                        viewMode === "split" 
+                          ? "lg:col-span-7 grid sm:grid-cols-2 gap-4" 
+                          : "grid sm:grid-cols-2 lg:grid-cols-3 gap-5"
+                      }>
+                        {filteredSalons.map((salon) => {
+                          const isFav = favoriteIds.includes(salon.id);
+                          const matchReason = matchReasons[salon.id];
+                          const isHovered = hoveredSalonId === salon.id;
 
-                        return (
-                          <div
-                            key={salon.id}
-                            className="group rounded-3xl bg-white border border-zinc-200/80 hover:border-zinc-300 p-5 shadow-xs hover:shadow-md transition-all flex flex-col justify-between space-y-4 relative"
-                          >
-                            <div>
-                              {/* Top Bar Card */}
-                              <div className="flex items-center justify-between gap-2">
-                                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-zinc-100 text-zinc-700 border border-zinc-200/60">
-                                  {salon.category}
-                                </span>
+                          return (
+                            <div
+                              key={salon.id}
+                              onMouseEnter={() => setHoveredSalonId(salon.id)}
+                              onMouseLeave={() => setHoveredSalonId(null)}
+                              className={`group rounded-3xl bg-white border p-5 shadow-xs hover:shadow-md transition-all flex flex-col justify-between space-y-4 relative ${
+                                isHovered 
+                                  ? "border-zinc-900 ring-2 ring-zinc-900/10 shadow-md scale-[1.01]" 
+                                  : "border-zinc-200/80 hover:border-zinc-300"
+                              }`}
+                            >
+                              <div>
+                                {/* Top Bar Card */}
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-zinc-100 text-zinc-700 border border-zinc-200/60">
+                                    {salon.category}
+                                  </span>
 
-                                <div className="flex items-center gap-1">
-                                  <button
-                                    onClick={() => setActiveShareSalon(salon)}
-                                    className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 transition-colors cursor-pointer"
-                                    title="Condividi / QR Code"
-                                  >
-                                    <QrCode className="w-4 h-4" />
-                                  </button>
-                                  <button
-                                    onClick={() => handleToggleFavorite(salon.id)}
-                                    className="p-1.5 rounded-lg text-zinc-400 hover:text-rose-500 hover:bg-zinc-100 transition-colors cursor-pointer"
-                                    title="Salva tra i preferiti"
-                                  >
-                                    <Heart className={`w-4 h-4 ${isFav ? "fill-rose-500 text-rose-500" : ""}`} />
-                                  </button>
-                                </div>
-                              </div>
-
-                              {/* Match Reason Badge se presente */}
-                              {matchReason && (
-                                <div className="mt-2 text-[10px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200/80 px-2.5 py-1 rounded-lg flex items-center gap-1">
-                                  <CheckCheck className="w-3 h-3 text-emerald-600 shrink-0" />
-                                  <span className="truncate">{matchReason}</span>
-                                </div>
-                              )}
-
-                              {/* Title & Location */}
-                              <div className="mt-3">
-                                <h3 className="font-bold text-base text-zinc-900 tracking-tight group-hover:text-zinc-700 transition-colors">
-                                  {salon.name}
-                                </h3>
-                                <a
-                                  href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(salon.name + " " + salon.address + " " + salon.city)}`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-xs text-zinc-500 hover:text-zinc-900 flex items-center gap-1.5 mt-1 transition-colors group/loc"
-                                  title="Apri posizione su Google Maps"
-                                >
-                                  <MapPin className="w-3.5 h-3.5 text-zinc-400 group-hover/loc:text-zinc-700 shrink-0" />
-                                  <span className="truncate">{salon.address}, {salon.city} ({salon.zone})</span>
-                                  <ExternalLink className="w-3 h-3 opacity-0 group-hover/loc:opacity-100 transition-opacity" />
-                                </a>
-                              </div>
-
-                              {/* Rating & Distance */}
-                              <div className="flex items-center gap-3 mt-3.5 py-2 px-3 rounded-xl bg-zinc-50 border border-zinc-200/60 text-xs">
-                                <span className="flex items-center gap-1 font-bold text-amber-700">
-                                  <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-500" />
-                                  {salon.rating}
-                                </span>
-                                <span className="text-zinc-400 font-mono">({salon.reviewCount})</span>
-                                <span className={`ml-auto flex items-center gap-1 ${
-                                  userLocation && salonDistances[salon.id] !== undefined
-                                    ? "text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200 font-bold text-[11px]"
-                                    : "text-zinc-500 font-medium"
-                                }`}>
-                                  <Navigation className={`w-3 h-3 ${userLocation ? "text-emerald-600" : "text-zinc-400"}`} />
-                                  {userLocation && salonDistances[salon.id] !== undefined
-                                    ? `${formatDistance(salonDistances[salon.id])} da te`
-                                    : salon.distance}
-                                </span>
-                              </div>
-
-                              {/* Servizi Chiave Disponibili */}
-                              <div className="mt-4 space-y-1.5">
-                                <span className="text-[10px] uppercase font-bold text-zinc-500 tracking-wider block">
-                                  Servizi più richiesti:
-                                </span>
-                                <div className="space-y-1.5">
-                                  {salon.featuredServices.slice(0, 3).map((fs, idx) => (
+                                  <div className="flex items-center gap-1">
                                     <button
-                                      key={idx}
-                                      onClick={() => {
-                                        setActiveBookingSalon(salon);
-                                        setPreselectedServiceId(DEFAULT_BOOKING_SERVICES[0].id);
-                                      }}
-                                      className="w-full text-left p-2 rounded-xl bg-zinc-50/70 hover:bg-zinc-100/70 border border-zinc-200/50 hover:border-zinc-300 transition-colors flex items-center justify-between text-xs group/btn cursor-pointer"
+                                      onClick={() => setActiveShareSalon(salon)}
+                                      className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 transition-colors cursor-pointer"
+                                      title="Condividi / QR Code"
                                     >
-                                      <span className="text-zinc-700 font-medium truncate pr-2 group-hover/btn:text-zinc-900">
-                                        {fs.name}
-                                      </span>
-                                      <span className="font-bold text-zinc-900 shrink-0">
-                                        {fs.price} €
-                                      </span>
+                                      <QrCode className="w-4 h-4" />
                                     </button>
-                                  ))}
+                                    <button
+                                      onClick={() => handleToggleFavorite(salon.id)}
+                                      className="p-1.5 rounded-lg text-zinc-400 hover:text-rose-500 hover:bg-zinc-100 transition-colors cursor-pointer"
+                                      title="Salva tra i preferiti"
+                                    >
+                                      <Heart className={`w-4 h-4 ${isFav ? "fill-rose-500 text-rose-500" : ""}`} />
+                                    </button>
+                                  </div>
                                 </div>
+
+                                {/* Match Reason Badge se presente */}
+                                {matchReason && (
+                                  <div className="mt-2 text-[10px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200/80 px-2.5 py-1 rounded-lg flex items-center gap-1">
+                                    <CheckCheck className="w-3 h-3 text-emerald-600 shrink-0" />
+                                    <span className="truncate">{matchReason}</span>
+                                  </div>
+                                )}
+
+                                {/* Title & Location */}
+                                <div className="mt-3">
+                                  <Link href={`/salone/${salon.id}`} className="block group/title">
+                                    <h3 className="font-bold text-base text-zinc-900 tracking-tight group-hover/title:text-zinc-600 transition-colors">
+                                      {salon.name}
+                                    </h3>
+                                  </Link>
+                                  <a
+                                    href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(salon.name + " " + salon.address + " " + salon.city)}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-xs text-zinc-500 hover:text-zinc-900 flex items-center gap-1.5 mt-1 transition-colors group/loc"
+                                    title="Apri posizione su Google Maps"
+                                  >
+                                    <MapPin className="w-3.5 h-3.5 text-zinc-400 group-hover/loc:text-zinc-700 shrink-0" />
+                                    <span className="truncate">{salon.address}, {salon.city} ({salon.zone})</span>
+                                    <ExternalLink className="w-3 h-3 opacity-0 group-hover/loc:opacity-100 transition-opacity" />
+                                  </a>
+                                </div>
+
+                                {/* Rating & Distance */}
+                                <div className="flex items-center gap-3 mt-3.5 py-2 px-3 rounded-xl bg-zinc-50 border border-zinc-200/60 text-xs">
+                                  <span className="flex items-center gap-1 font-bold text-amber-700">
+                                    <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-500" />
+                                    {salon.rating}
+                                  </span>
+                                  <span className="text-zinc-400 font-mono">({salon.reviewCount})</span>
+                                  <span className={`ml-auto flex items-center gap-1 ${
+                                    userLocation && salonDistances[salon.id] !== undefined
+                                      ? "text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200 font-bold text-[11px]"
+                                      : "text-zinc-500 font-medium"
+                                  }`}>
+                                    <Navigation className={`w-3 h-3 ${userLocation ? "text-emerald-600" : "text-zinc-400"}`} />
+                                    {userLocation && salonDistances[salon.id] !== undefined
+                                      ? `${formatDistance(salonDistances[salon.id])} da te`
+                                      : salon.distance}
+                                  </span>
+                                </div>
+
+                                {/* Servizi Chiave Disponibili */}
+                                <div className="mt-4 space-y-1.5">
+                                  <span className="text-[10px] uppercase font-bold text-zinc-500 tracking-wider block">
+                                    Servizi più richiesti:
+                                  </span>
+                                  <div className="space-y-1.5">
+                                    {salon.featuredServices.slice(0, 3).map((fs, idx) => (
+                                      <button
+                                        key={idx}
+                                        onClick={() => {
+                                          setActiveBookingSalon(salon);
+                                          setPreselectedServiceId(DEFAULT_BOOKING_SERVICES[0].id);
+                                        }}
+                                        className="w-full text-left p-2 rounded-xl bg-zinc-50/70 hover:bg-zinc-100/70 border border-zinc-200/50 hover:border-zinc-300 transition-colors flex items-center justify-between text-xs group/btn cursor-pointer"
+                                      >
+                                        <span className="text-zinc-700 font-medium truncate pr-2 group-hover/btn:text-zinc-900">
+                                          {fs.name}
+                                        </span>
+                                        <span className="font-bold text-zinc-900 shrink-0">
+                                          {fs.price} €
+                                        </span>
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+
+                              </div>
+
+                              {/* Card Footer Buttons: Vedi Salone + Prenota */}
+                              <div className="pt-3 border-t border-zinc-100 flex items-center gap-2">
+                                <Link
+                                  href={`/salone/${salon.id}`}
+                                  className="flex-1 py-2 px-3 bg-zinc-100 hover:bg-zinc-200 text-zinc-900 rounded-xl font-bold text-xs transition-colors flex items-center justify-center gap-1.5 text-center"
+                                  title="Apri scheda vetrina del salone con foto, team e lookbook"
+                                >
+                                  <Eye className="w-3.5 h-3.5 text-zinc-600" />
+                                  <span>Vedi Salone</span>
+                                </Link>
+
+                                <button
+                                  onClick={() => {
+                                    setActiveBookingSalon(salon);
+                                    setPreselectedServiceId(undefined);
+                                  }}
+                                  className="flex-1 py-2 px-3 bg-zinc-950 text-white hover:bg-zinc-800 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-1.5 shadow-xs cursor-pointer active:scale-95"
+                                >
+                                  <CalendarPlus className="w-3.5 h-3.5" />
+                                  <span>Prenota</span>
+                                  <span className="text-[10px] text-zinc-400 font-mono ml-auto">€{salon.minPrice}</span>
+                                </button>
                               </div>
 
                             </div>
+                          );
+                        })}
+                      </div>
 
-                            {/* Card Footer Button */}
-                            <div className="pt-3 border-t border-zinc-100 flex gap-2">
-                              <button
-                                onClick={() => {
-                                  setActiveBookingSalon(salon);
-                                  setPreselectedServiceId(undefined);
-                                }}
-                                className="w-full py-2.5 px-4 bg-zinc-900 text-white hover:bg-zinc-800 rounded-xl font-semibold text-xs transition-all flex items-center justify-center gap-2 shadow-xs cursor-pointer active:scale-95"
-                              >
-                                <CalendarPlus className="w-4 h-4" />
-                                <span>Prenota Ora</span>
-                                <span className="text-[10px] text-zinc-300 font-mono ml-auto">da {salon.minPrice}€</span>
-                              </button>
-                            </div>
+                      {/* Mappa Interattiva OpenStreetMap Split-View a Destra (Desktop) */}
+                      {viewMode === "split" && (
+                        <div className="lg:col-span-5 sticky top-20 h-[580px] lg:h-[calc(100vh-140px)] w-full">
+                          <MarketplaceMap
+                            salons={filteredSalons}
+                            selectedSalonId={selectedMapSalon?.id}
+                            hoveredSalonId={hoveredSalonId}
+                            onSelectSalon={(s) => setSelectedMapSalon(s)}
+                            onBookSalon={(s) => {
+                              setActiveBookingSalon(s);
+                              setPreselectedServiceId(undefined);
+                            }}
+                            userLocation={userLocation}
+                          />
+                        </div>
+                      )}
 
-                          </div>
-                        );
-                      })}
                     </div>
                   )}
 
