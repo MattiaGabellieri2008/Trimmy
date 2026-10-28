@@ -31,6 +31,8 @@ import { getUserProfile, fetchUserProfile } from "@/lib/user-profile";
 import { addSalonNotification } from "@/lib/salon-notifications";
 import { sendNotification } from "@/lib/notifications-service";
 import { parseDateSafe } from "@/lib/date-utils";
+import CheckoutModal from "@/components/CheckoutModal";
+import DailyCashClosingModal from "@/components/DailyCashClosingModal";
 import { 
   Plus, 
   X, 
@@ -46,16 +48,18 @@ import {
   Users, 
   Scissors, 
   Check, 
-  CalendarDays,
-  CalendarRange,
-  AlertCircle,
-  MessageSquare,
-  Phone,
-  GripVertical,
-  Undo2,
-  Clock3,
-  Sparkles,
-  AlertTriangle
+  CalendarDays, 
+  CalendarRange, 
+  AlertCircle, 
+  MessageSquare, 
+  Phone, 
+  GripVertical, 
+  Undo2, 
+  Clock3, 
+  Sparkles, 
+  AlertTriangle,
+  Receipt,
+  Lock
 } from "lucide-react";
 
 const TIME_SLOTS = [
@@ -107,6 +111,16 @@ export default function AgendaPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [salonNameState, setSalonNameState] = useState<string>("Salone");
+
+  // ─── POS & CHIUSURA CASSA STATE ───
+  const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
+  const [isDailyClosingOpen, setIsDailyClosingOpen] = useState(false);
+  const [checkoutInitialData, setCheckoutInitialData] = useState<{
+    appointmentId?: string;
+    customerName?: string;
+    customerPhone?: string;
+    items?: { id: string; type: "SERVICE" | "PRODUCT"; name: string; price: number; quantity: number; operatorId?: string; operatorName?: string }[];
+  } | null>(null);
 
   // ─── DRAG & DROP & RESIZE STATE ───
   const [draggingAppt, setDraggingAppt] = useState<GetDailyAppointmentsData["appointments"][0] | null>(null);
@@ -1110,6 +1124,29 @@ export default function AgendaPage() {
             Prenota
           </button>
 
+          {/* Punto Cassa POS Rapido */}
+          <button
+            onClick={() => {
+              setCheckoutInitialData(null);
+              setIsCheckoutOpen(true);
+            }}
+            className="flex items-center gap-1.5 sm:gap-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-zinc-950 px-3 sm:px-3.5 py-1.5 sm:py-2 rounded-lg text-xs font-bold transition-all shadow-xs cursor-pointer"
+            title="Punto Cassa per vendita diretta e scontrini da banco"
+          >
+            <Receipt className="w-4 h-4" />
+            <span className="hidden sm:inline">Cassa</span> Banco
+          </button>
+
+          {/* Chiusura Cassa Fiscale (Report Z) */}
+          <button
+            onClick={() => setIsDailyClosingOpen(true)}
+            className="flex items-center gap-1.5 sm:gap-2 bg-zinc-100 hover:bg-zinc-200 text-zinc-800 border border-zinc-200 px-3 sm:px-3.5 py-1.5 sm:py-2 rounded-lg text-xs font-semibold transition-colors shadow-2xs cursor-pointer"
+            title="Chiusura di cassa giornaliera (Report Z)"
+          >
+            <Lock className="w-3.5 h-3.5 text-amber-600" />
+            <span className="hidden md:inline">Chiusura</span> Z
+          </button>
+
           {/* Logout */}
           <button 
             onClick={handleLogout}
@@ -1850,6 +1887,35 @@ export default function AgendaPage() {
                 </div>
               </div>
 
+              {/* Incassa al Banco / Checkout POS */}
+              <button
+                type="button"
+                onClick={() => {
+                  setCheckoutInitialData({
+                    appointmentId: selectedAppt.id,
+                    customerName: `${selectedAppt.customer.firstName} ${selectedAppt.customer.lastName}`.trim(),
+                    customerPhone: selectedAppt.customer.phone || "",
+                    items: [
+                      {
+                        id: selectedAppt.service.id,
+                        type: "SERVICE",
+                        name: selectedAppt.service.name,
+                        price: selectedAppt.service.price,
+                        quantity: 1,
+                        operatorId: selectedAppt.staff.id,
+                        operatorName: selectedAppt.staff.fullName
+                      }
+                    ]
+                  });
+                  setSelectedAppt(null);
+                  setIsCheckoutOpen(true);
+                }}
+                className="w-full py-2.5 px-4 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-zinc-950 font-bold rounded-xl text-xs flex items-center justify-center gap-2 shadow-md shadow-amber-500/20 transition cursor-pointer"
+              >
+                <Receipt className="w-4 h-4" />
+                Incassa al Banco / Scontrino POS 💳
+              </button>
+
               {/* Contatto Rapido Notifica Push Firebase & Telefono */}
               {selectedAppt.customer?.phone && (
                 <div className="p-3 bg-zinc-50 border border-zinc-200/80 rounded-xl space-y-2">
@@ -2255,6 +2321,31 @@ export default function AgendaPage() {
           </div>
         </>
       )}
+
+      {/* 5. MODALE PUNTO CASSA (POS) */}
+      <CheckoutModal
+        isOpen={isCheckoutOpen}
+        onClose={() => setIsCheckoutOpen(false)}
+        tenantId={salonTenantId || currentUser?.uid || "tenant-default"}
+        salonRawId={currentUser?.uid}
+        salonName={salonNameState}
+        appointmentId={checkoutInitialData?.appointmentId}
+        initialCustomerName={checkoutInitialData?.customerName || "Cliente al Banco"}
+        initialCustomerPhone={checkoutInitialData?.customerPhone || ""}
+        initialItems={checkoutInitialData?.items || []}
+        availableStaff={activeStaff}
+        onTransactionCompleted={async () => {
+          await fetchAppuntamenti();
+        }}
+      />
+
+      {/* 6. MODALE CHIUSURA CASSA GIORNALIERA (REPORT Z) */}
+      <DailyCashClosingModal
+        isOpen={isDailyClosingOpen}
+        onClose={() => setIsDailyClosingOpen(false)}
+        tenantId={salonTenantId || currentUser?.uid || "tenant-default"}
+        salonName={salonNameState}
+      />
 
     </div>
   );
