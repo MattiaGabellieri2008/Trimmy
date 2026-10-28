@@ -15,6 +15,8 @@ class SalonRepository extends ChangeNotifier {
       category: 'Hair Stylist Donna',
       imageUrl: 'https://images.unsplash.com/photo-1560066984-138dadb4c035?w=700&auto=format&fit=crop&q=80',
       phone: '+39 02 8847291',
+      latitude: 45.4642,
+      longitude: 9.1900,
       lookbook: [
         'https://images.unsplash.com/photo-1560066984-138dadb4c035?w=700&auto=format&fit=crop&q=80',
         'https://images.unsplash.com/photo-1521590832167-7bcbfaa6381f?w=700&auto=format&fit=crop&q=80',
@@ -32,6 +34,8 @@ class SalonRepository extends ChangeNotifier {
       category: 'Barber Shop',
       imageUrl: 'https://images.unsplash.com/photo-1585747860715-2ba37e788b70?w=700&auto=format&fit=crop&q=80',
       phone: '+39 02 9182736',
+      latitude: 45.4719,
+      longitude: 9.1878,
       lookbook: [
         'https://images.unsplash.com/photo-1585747860715-2ba37e788b70?w=700&auto=format&fit=crop&q=80',
         'https://images.unsplash.com/photo-1503951914875-452162b0f3f1?w=700&auto=format&fit=crop&q=80',
@@ -48,6 +52,8 @@ class SalonRepository extends ChangeNotifier {
       category: 'Unisex',
       imageUrl: 'https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?w=700&auto=format&fit=crop&q=80',
       phone: '+39 02 7483921',
+      latitude: 45.4514,
+      longitude: 9.1764,
       lookbook: [
         'https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?w=700&auto=format&fit=crop&q=80',
       ],
@@ -100,13 +106,40 @@ class SalonRepository extends ChangeNotifier {
     }
   }
 
-  List<Salon> searchSalons(String query, String category) {
-    return _salons.where((s) {
+  /// Ricerca e filtra i saloni per testo, categoria, città e ordinamento per vicinanza GPS
+  List<Salon> searchSalons(
+    String query, 
+    String category, {
+    double? userLat, 
+    double? userLng,
+    String? cityFilter,
+  }) {
+    final list = _salons.where((s) {
       final matchesQuery = query.isEmpty ||
           s.name.toLowerCase().contains(query.toLowerCase()) ||
-          s.city.toLowerCase().contains(query.toLowerCase());
+          s.city.toLowerCase().contains(query.toLowerCase()) ||
+          s.address.toLowerCase().contains(query.toLowerCase());
       final matchesCat = category == 'Tutti' || s.category == category;
-      return matchesQuery && matchesCat;
+      final matchesCity = cityFilter == null || 
+          cityFilter == 'Tutte' || 
+          cityFilter.startsWith('Vicino') || 
+          s.city.toLowerCase() == cityFilter.toLowerCase();
+      return matchesQuery && matchesCat && matchesCity;
     }).toList();
+
+    // Se le coordinate utente sono presenti, ordina per vicinanza (distanza crescente)
+    if (userLat != null && userLng != null) {
+      list.sort((a, b) {
+        if (a.latitude == null || a.longitude == null) return 1;
+        if (b.latitude == null || b.longitude == null) return -1;
+        final distA = (a.latitude! - userLat) * (a.latitude! - userLat) +
+            (a.longitude! - userLng) * (a.longitude! - userLng);
+        final distB = (b.latitude! - userLat) * (b.latitude! - userLat) +
+            (b.longitude! - userLng) * (b.longitude! - userLng);
+        return distA.compareTo(distB);
+      });
+    }
+
+    return list;
   }
 }

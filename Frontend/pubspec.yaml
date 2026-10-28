@@ -32,6 +32,9 @@ dependencies:
   # URL Launcher for Phone & WhatsApp
   url_launcher: ^6.3.0
   
+  # Geolocation & GPS Runtime Permissions (MOB-02)
+  geolocator: ^12.0.0
+  
   # Animations & UI Flourishes
   flutter_animate: ^4.5.0
 

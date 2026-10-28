@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'core/theme/app_theme.dart';
+import 'core/services/location_service.dart';
 import 'data/models/user_model.dart';
 import 'data/repositories/auth_repository.dart';
 import 'data/repositories/salon_repository.dart';
@@ -22,6 +23,7 @@ void main() async {
         ChangeNotifierProvider(create: (_) => SalonRepository()),
         ChangeNotifierProvider(create: (_) => AppointmentRepository()),
         ChangeNotifierProvider(create: (_) => FidelityRepository()),
+        ChangeNotifierProvider(create: (_) => LocationService()),
       ],
       child: const TrimmyApp(),
     ),

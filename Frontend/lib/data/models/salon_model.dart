@@ -10,6 +10,8 @@ class Salon {
   final String imageUrl;
   final String phone;
   final List<String> lookbook;
+  final double? latitude;
+  final double? longitude;
 
   const Salon({
     required this.id,
@@ -23,6 +25,8 @@ class Salon {
     required this.imageUrl,
     required this.phone,
     this.lookbook = const [],
+    this.latitude,
+    this.longitude,
   });
 
   factory Salon.fromJson(Map<String, dynamic> json) {
@@ -38,6 +42,8 @@ class Salon {
       imageUrl: json['imageUrl'] as String? ?? 'https://images.unsplash.com/photo-1585747860715-2ba37e788b70?w=600&auto=format&fit=crop&q=80',
       phone: json['phone'] as String? ?? '+39 02 8847291',
       lookbook: (json['lookbook'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? const [],
+      latitude: (json['latitude'] as num?)?.toDouble(),
+      longitude: (json['longitude'] as num?)?.toDouble(),
     );
   }
 
@@ -54,6 +60,8 @@ class Salon {
       'imageUrl': imageUrl,
       'phone': phone,
       'lookbook': lookbook,
+      if (latitude != null) 'latitude': latitude,
+      if (longitude != null) 'longitude': longitude,
     };
   }
 }
