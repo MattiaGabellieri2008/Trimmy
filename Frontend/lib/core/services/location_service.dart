@@ -150,3 +150,4 @@ class LocationService extends ChangeNotifier {
     return await Geolocator.openAppSettings();
   }
 }
+

@@ -1,17 +1,39 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../../core/network/api_client.dart';
 import '../models/user_model.dart';
 
 class AuthRepository extends ChangeNotifier {
   AppUser? _currentUser;
   bool _isLoading = false;
+  static const String _sessionStorageKey = 'trimmy_user_session';
 
   AppUser? get currentUser => _currentUser;
   bool get isAuthenticated => _currentUser != null;
   bool get isLoading => _isLoading;
 
   AuthRepository() {
-    // Default demo session per esplorazione rapida
+    _initSession();
+  }
+
+  /// Recupera la sessione salvata localmente su disco
+  Future<void> _initSession() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final rawJson = prefs.getString(_sessionStorageKey);
+      if (rawJson != null && rawJson.isNotEmpty) {
+        final decoded = jsonDecode(rawJson) as Map<String, dynamic>;
+        _currentUser = AppUser.fromJson(decoded);
+        notifyListeners();
+        return;
+      }
+    } catch (e) {
+      debugPrint('Nota ripristino sessione disco: $e');
+    }
+
+    // Default demo session se prima installazione
     _currentUser = const AppUser(
       id: 'demo-client-1',
       email: 'mario.rossi@trimmy.it',
@@ -20,6 +42,21 @@ class AuthRepository extends ChangeNotifier {
       role: UserRole.client,
       salonId: 'salon-1',
     );
+    _saveSessionToDisk(_currentUser);
+    notifyListeners();
+  }
+
+  Future<void> _saveSessionToDisk(AppUser? user) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (user != null) {
+        await prefs.setString(_sessionStorageKey, jsonEncode(user.toJson()));
+      } else {
+        await prefs.remove(_sessionStorageKey);
+      }
+    } catch (e) {
+      debugPrint('Errore salvataggio sessione disco: $e');
+    }
   }
 
   Future<void> signInWithEmailPassword(String email, String password) async {
@@ -49,6 +86,9 @@ class AuthRepository extends ChangeNotifier {
       );
     }
 
+    await _saveSessionToDisk(_currentUser);
+    await ApiClient().setAuthToken('token-${_currentUser!.id}');
+
     _isLoading = false;
     notifyListeners();
   }
@@ -74,11 +114,14 @@ class AuthRepository extends ChangeNotifier {
         salonId: 'salon-1',
       );
     }
+    _saveSessionToDisk(_currentUser);
     notifyListeners();
   }
 
-  void signOut() {
+  Future<void> signOut() async {
     _currentUser = null;
+    await _saveSessionToDisk(null);
+    await ApiClient().setAuthToken(null);
     notifyListeners();
   }
 }

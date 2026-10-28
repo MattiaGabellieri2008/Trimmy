@@ -77,6 +77,23 @@ class CustomerLoyalty {
       euroDiscountValue: (points * 0.10),
     );
   }
+
+  factory CustomerLoyalty.fromJson(Map<String, dynamic> json) {
+    final customerId = json['customerId'] as String? ?? '';
+    final points = (json['pointsBalance'] as num?)?.toInt() ?? 0;
+    final totalEarned = (json['totalPointsEarned'] as num?)?.toInt() ?? points;
+    return CustomerLoyalty.fromPoints(customerId, points, totalEarned);
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'customerId': customerId,
+      'pointsBalance': pointsBalance,
+      'totalPointsEarned': totalPointsEarned,
+      'tier': tier.name,
+      'euroDiscountValue': euroDiscountValue,
+    };
+  }
 }
 
 class CustomerPackage {
@@ -98,5 +115,29 @@ class CustomerPackage {
     required this.status,
   });
 
-  bool get isActive => status == 'ACTIVE' && remainingSessions > 0;
+  factory CustomerPackage.fromJson(Map<String, dynamic> json) {
+    return CustomerPackage(
+      id: json['id'] as String? ?? '',
+      packageName: json['packageName'] as String? ?? 'Carnet Trattamento',
+      serviceName: json['serviceName'] as String? ?? 'Trattamento',
+      totalSessions: (json['totalSessions'] as num?)?.toInt() ?? 1,
+      remainingSessions: (json['remainingSessions'] as num?)?.toInt() ?? 0,
+      expiryDate: json['expiryDate'] != null 
+          ? DateTime.tryParse(json['expiryDate'].toString()) ?? DateTime.now().add(const Duration(days: 90))
+          : DateTime.now().add(const Duration(days: 90)),
+      status: json['status'] as String? ?? 'ACTIVE',
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'packageName': packageName,
+      'serviceName': serviceName,
+      'totalSessions': totalSessions,
+      'remainingSessions': remainingSessions,
+      'expiryDate': expiryDate.toIso8601String(),
+      'status': status,
+    };
+  }
 }

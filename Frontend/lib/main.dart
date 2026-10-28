@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'core/theme/app_theme.dart';
 import 'core/services/location_service.dart';
+import 'core/network/api_client.dart';
 import 'data/models/user_model.dart';
 import 'data/repositories/auth_repository.dart';
 import 'data/repositories/salon_repository.dart';
@@ -15,6 +16,9 @@ import 'ui/salon/salon_main_screen.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await initializeDateFormatting('it_IT', null);
+
+  // Inizializza ApiClient con il token salvato su disco
+  await ApiClient().init();
 
   runApp(
     MultiProvider(
