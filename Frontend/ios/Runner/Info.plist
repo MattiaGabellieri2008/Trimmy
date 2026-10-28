@@ -40,5 +40,13 @@
 	<true/>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Trimmy usa la tua posizione per trovare i saloni di bellezza più vicini a te.</string>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>https</string>
+		<string>http</string>
+		<string>tel</string>
+		<string>mailto</string>
+		<string>whatsapp</string>
+	</array>
 </dict>
 </plist>

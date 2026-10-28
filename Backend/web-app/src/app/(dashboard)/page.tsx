@@ -16,7 +16,7 @@ import {
 import { dataConnect, auth, db } from "@/lib/firebase";
 import { collection, onSnapshot } from "firebase/firestore";
 import { onAuthStateChanged, User as FirebaseUser } from "firebase/auth";
-import { getSalonTenantId, ensureSalonTenant, ensureSalonStaff, ensureSalonService } from "@/lib/tenant-helper";
+import { getSalonTenantId, resolveSalonTenantId, ensureSalonTenant, ensureSalonStaff, ensureSalonService } from "@/lib/tenant-helper";
 import { getSalonServices, fetchSalonServices, SalonServiceItem } from "@/lib/services-store";
 import { fetchSalonCustomers, saveSalonCustomer, CustomerItem } from "@/lib/customers-store";
 import { 
@@ -191,12 +191,13 @@ export default function AgendaPage() {
 
   // 1. Controllo Autenticazione & Determinazione Tenant Reale
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (!user) {
         router.push("/login");
       } else {
         setCurrentUser(user);
-        const tid = getSalonTenantId(user.uid);
+        const profile = await fetchUserProfile(user.uid) || getUserProfile(user.uid);
+        const tid = resolveSalonTenantId(user.uid, profile?.salonId);
         setSalonTenantId(tid);
         setCheckingAuth(false);
       }
@@ -211,19 +212,24 @@ export default function AgendaPage() {
     async function loadSalonResources() {
       try {
         const profile = await fetchUserProfile(currentUser!.uid) || getUserProfile(currentUser!.uid);
+        const isStaff = profile?.role === "collaboratore" || profile?.isStaffMember;
         const salonName = profile?.salonName || currentUser!.displayName || "Il Mio Salone";
         setSalonNameState(salonName);
 
-        // Assicura l'esistenza del salone in PostgreSQL con il piano reale
-        await ensureSalonTenant(currentUser!.uid, salonName, profile?.planType || "PRO");
-
-        // Assicura l'esistenza del titolare come staff in PostgreSQL
-        const ownerStaffObj = {
+        const currentStaffObj = {
           id: currentUser!.uid,
-          fullName: currentUser!.displayName || salonName || "Titolare Salone",
-          role: "Titolare"
+          fullName: currentUser!.displayName || salonName || (isStaff ? "Collaboratore" : "Titolare Salone"),
+          role: isStaff ? "Staff" : "Titolare"
         };
-        await ensureSalonStaff(currentUser!.uid, salonTenantId, ownerStaffObj.fullName, currentUser!.phoneNumber || undefined, "Titolare");
+
+        if (!isStaff) {
+          // Assicura l'esistenza del salone in PostgreSQL con il piano reale
+          await ensureSalonTenant(currentUser!.uid, salonName, profile?.planType || "PRO");
+          await ensureSalonStaff(currentUser!.uid, salonTenantId, currentStaffObj.fullName, currentUser!.phoneNumber || undefined, "Titolare");
+        } else {
+          // Se collaboratore invitato, assicura la presenza nel team del salone
+          await ensureSalonStaff(currentUser!.uid, salonTenantId, currentStaffObj.fullName, currentUser!.phoneNumber || undefined, "Staff");
+        }
 
         // Carica clienti reali del salone (Isolamento Multi-tenant rigoroso per tenantId e auth UID)
         const salonCusts = await fetchSalonCustomers(salonTenantId, currentUser!.uid);
@@ -244,7 +250,7 @@ export default function AgendaPage() {
         if (uRes.data.users && uRes.data.users.length > 0) {
           setActiveStaff(uRes.data.users);
         } else {
-          setActiveStaff([ownerStaffObj]);
+          setActiveStaff([currentStaffObj]);
         }
 
         // Carica trattamenti reali del salone (da Firestore / cache) e sincronizza su SQL

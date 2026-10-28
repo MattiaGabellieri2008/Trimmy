@@ -1,125 +1,300 @@
 rules_version = '2';
+
+// ===============================================================
+// Assumed Data Model & Security Architecture (Trimmy SaaS)
+// ===============================================================
+//
+// Root Collections:
+// 1. /users/{userId}
+//    - uid: string (identificativo univoco Firebase Auth)
+//    - email: string (email proprietario)
+//    - displayName: string
+//    - role: string ('cliente' | 'salone') [Immutabile dopo la creazione, impedita escalation]
+//    - salonName, address, city, phone, etc. (campi salone opzionali)
+//
+// 2. /saloni/{salonId}
+//    - salonId: string (UID raw di Firebase Auth oppure tenantId UUID deterministico da getSalonTenantId)
+//    - ownerUid, userId: string (identificativo del titolare/gestore del salone)
+//    - Sottocollezioni isolate del salone (Multi-Tenant):
+//      * /servizi/{serviceId}: Trattamenti e servizi del salone (lettura pubblica, scrittura salone)
+//      * /staff/{staffId}: Collaboratori e operatori (lettura pubblica, scrittura salone)
+//      * /inviti/{inviteId}: Token di invito onboarding collaboratori (privato salone)
+//      * /notifiche/{notifId} & /notifications/{notifId}: Notifiche in-app salone
+//      * /notification_logs/{logId}: Registro storico notifiche push FCM
+//      * /settings/{settingId}: Configurazioni (orari di apertura working_hours, brand palette, fidelity)
+//      * /schedule_locks/{lockId}: Lock atomici di slot orari per prevenire collisioni e double-booking
+//      * /clienti/{clientId}: Schede clienti confidenziali (note tecniche, formule colore, debiti)
+//        [SEC-01 & SEC-02: Scrittura riservata rigorosamente a isSalonAuthorized(salonId)]
+//      * /appuntamenti/{appId}: Prenotazioni nell'agenda del salone
+//      * /transactions/{txId}: Ricevute di cassa e pagamenti
+//      * /daily_closings/{closingId}: Chiusure di cassa serali fiscali
+//      * /prodotti/{prodId}: Catalogo magazzino e prodotti rivendita
+//      * /stock_movements/{movId}: Tracciamento movimenti di carico/scarico magazzino
+//      * /packages/{pkgId}: Pacchetti promozionali e abbonamenti a listino (es. 5+1)
+//      * /loyalty_customers/{customerId}: Saldo punti fidelity e tessere fedeltà
+//      * /customer_packages/{custPkgId}: Pacchetti acquistati dai singoli clienti
+//      * /loyalty_movements/{movId}: Storico movimenti punti fedeltà
+//      * /sync_outbox/{outboxId}: Coda di sincronizzazione offline-first
+//
+// 3. /appointments/{appId}
+//    - Collezione globale ridondante per sincronizzazioni cross-salone e query rapide clienti.
+//
+// 4. /mail/{mailId}
+//    - Coda trigger estensioni Firebase per invio email transazionali (inviti staff, conferme).
+//
+// ===============================================================
+
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    // ===============================================================
+    // Funzioni Helper di Autorizzazione e Sicurezza
+    // ===============================================================
+
+    // Verifica se l'utente è autenticato con un token valido
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Verifica se l'utente autenticato è il proprietario del documento indicato da userId
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Verifica l'autorizzazione di gestione del salone specificato.
+    // Supporta sia l'UID raw sia il tenantId calcolato (UUID deterministico generato da getSalonTenantId(uid)).
+    // Controlla:
+    // 1. UID chiamante == salonId (match diretto)
+    // 2. Oppure esistenza del documento /saloni/{salonId} con ownerUid o userId corrispondente al chiamante
+    function isSalonAuthorized(salonId) {
+      return isAuthenticated() && (
+        request.auth.uid == salonId ||
+        (
+          exists(/databases/$(database)/documents/saloni/$(salonId)) && (
+            (get(/databases/$(database)/documents/saloni/$(salonId)).data.get('ownerUid', '') == request.auth.uid) ||
+            (get(/databases/$(database)/documents/saloni/$(salonId)).data.get('userId', '') == request.auth.uid)
+          )
+        )
+      );
+    }
+
+    // Verifica se l'utente chiamante è il cliente associato a una prenotazione
+    function isAppointmentClient(data) {
+      return isAuthenticated() && (
+        data.get('customerId', '') == request.auth.uid ||
+        (data.get('customer', null) != null && data.customer.get('id', '') == request.auth.uid) ||
+        ('email' in request.auth.token && (
+          (data.get('customer', null) != null && data.customer.get('email', '') == request.auth.token.email) ||
+          data.get('customerEmail', '') == request.auth.token.email
+        ))
+      );
+    }
+
+    // ===============================================================
+    // Collezione Utenti (/users/{userId})
+    // ===============================================================
     match /users/{userId} {
       // ─── LETTURA ───
-      // Il proprietario del profilo può sempre leggere il proprio documento
-      allow get: if (request.auth != null && request.auth.uid == userId) || resource.data.role == 'salone';
-      // Query / elenco: solo profili di tipo salone (marketplace e mappa pubblica)
+      // Il proprietario del profilo può sempre leggere il proprio documento (contiene PII come email/telefono).
+      // I profili di tipo 'salone' sono pubblici per permettere la ricerca nel marketplace e mappa.
+      allow get: if isOwner(userId) || (resource.data.role == 'salone');
+      // Query / elenco: consentito solo per profili di tipo salone (marketplace Trimmy)
       allow list: if resource.data.role == 'salone';
 
-      // ─── SCRITTURA (SICURA) ───
-      // REGOLA CRITICA: Solo il proprietario del documento può modificare il proprio profilo
-      allow create: if request.auth != null
-                    && request.auth.uid == userId;
+      // ─── SCRITTURA (ANTI-ESCALATION) ───
+      // Creazione: Solo il proprietario può creare il proprio profilo.
+      // È consentito impostare solo ruoli validi ('cliente' o 'salone'), impedendo ruoli non autorizzati.
+      allow create: if isOwner(userId) && (
+        !('role' in request.resource.data) ||
+        request.resource.data.role in ['cliente', 'salone']
+      );
 
-      // Update: solo il proprietario, e NON può modificare il proprio ruolo
-      allow update: if request.auth != null
-                    && request.auth.uid == userId
-                    // Impedisci escalation: il campo 'role' non può essere cambiato dopo la creazione
-                    && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['role']));
+      // Aggiornamento: Solo il proprietario del profilo.
+      // REGOLA CRITICA ANTI-ESCALATION: Il campo 'role' è rigorosamente immutabile dopo la creazione.
+      allow update: if isOwner(userId) && (
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role'])
+      );
 
-      // Delete: solo il proprietario può eliminare il proprio account
-      allow delete: if request.auth != null
-                    && request.auth.uid == userId;
+      // Eliminazione: Solo il proprietario può eliminare il proprio account.
+      allow delete: if isOwner(userId);
     }
 
-    // Collezione dei saloni
+    // ===============================================================
+    // Collezione Saloni Multi-Tenant (/saloni/{salonId})
+    // ===============================================================
     match /saloni/{salonId} {
-      // Profilo pubblico del salone (visibile per la ricerca e prenotazione clienti)
+      // Profilo pubblico del salone (necessario per visualizzazione marketplace e booking online)
       allow read: if true;
-      allow write: if request.auth != null && request.auth.uid == salonId;
 
-      // Servizi / trattamenti a listino (pubblici per prenotare)
+      // Scrittura profilo radice:
+      // - Creazione consentita a utenti autenticati che inizializzano il proprio salone
+      // - Aggiornamento ed eliminazione consentite esclusivamente al salone autorizzato
+      allow create: if isAuthenticated();
+      allow update, delete: if isSalonAuthorized(salonId);
+
+      // 1. SERVIZI E TRATTAMENTI A LISTINO
       match /servizi/{serviceId} {
         allow read: if true;
-        allow write: if request.auth != null && request.auth.uid == salonId;
+        allow write: if isSalonAuthorized(salonId);
       }
 
-      // CLIENTELA: 100% ISOLATA - Visibile e modificabile SOLO dal salone proprietario
-      match /clienti/{clientId} {
-        allow read, write: if request.auth != null && (request.auth.uid == salonId || request.auth.uid == clientId);
-      }
-
-      // STAFF E TEAM: Lettura pubblica per permettere ai clienti di selezionare l'operatore durante la prenotazione
+      // 2. STAFF E COLLABORATORI DEL TEAM
       match /staff/{staffId} {
         allow read: if true;
-        allow write: if request.auth != null && request.auth.uid == salonId;
+        allow write: if isSalonAuthorized(salonId);
       }
 
-      // INVITI COLLABORATORI: Visibili e gestibili solo dal salone proprietario
+      // 3. INVITI COLLABORATORI (TOKEN ONBOARDING)
       match /inviti/{inviteId} {
-        allow read, write: if request.auth != null && request.auth.uid == salonId;
+        allow read, write: if isSalonAuthorized(salonId);
       }
 
-      // NOTIFICHE SALONE: Il salone gestisce le proprie notifiche; i clienti autenticati possono creare avvisi di prenotazione
+      // 4. NOTIFICHE IN-APP SALONE (notifiche e notifications)
       match /notifiche/{notifId} {
-        allow read, update, delete: if request.auth != null && request.auth.uid == salonId;
-        allow create: if request.auth != null;
+        allow read, update, delete: if isSalonAuthorized(salonId);
+        allow create: if isAuthenticated();
       }
 
-      // IMPOSTAZIONI SALONE: Gestibili dal titolare
-      match /settings/{settingId} {
-        allow read, write: if request.auth != null && request.auth.uid == salonId;
+      match /notifications/{notifId} {
+        allow read, update, delete: if isSalonAuthorized(salonId);
+        allow create: if isAuthenticated();
       }
 
-      // LOG NOTIFICHE FIREBASE CLOUD MESSAGING:
+      // 5. LOG DELLE NOTIFICHE PUSH (FCM)
       match /notification_logs/{logId} {
-        allow read, write: if request.auth != null && request.auth.uid == salonId;
-        allow create: if request.auth != null;
+        allow read, update, delete: if isSalonAuthorized(salonId);
+        allow create: if isAuthenticated();
       }
 
-      // SCHEDULE LOCKS: Controllo concorrenza atomico anti double-booking
-      match /schedule_locks/{lockId} {
-        // Lettura pubblica per permettere al client di visualizzare gli slot occupati in tempo reale
+      // 6. IMPOSTAZIONI DEL SALONE (Orari lavorativi working_hours, brand palette, fidelity)
+      match /settings/{settingId} {
         allow read: if true;
-        // Scrittura consentita a qualsiasi utente autenticato (clienti e titolare salone)
-        allow write: if request.auth != null;
+        allow write: if isSalonAuthorized(salonId);
       }
 
-      // APPUNTAMENTI DEL SALONE: Visibili al salone proprietario e al cliente proprietario della prenotazione
+      // 7. SCHEDULE LOCKS (Controllo atomico concorrenza e anti double-booking)
+      match /schedule_locks/{lockId} {
+        allow read: if true;
+        allow write: if isAuthenticated();
+      }
+
+      // 8. ANAGRAFICA CLIENTI DEL SALONE (SEC-01 & SEC-02)
+      // REGOLA CRITICA:
+      // - Lettura: consentita al salone autorizzato o al cliente proprietario della propria scheda
+      // - Scrittura: ESCLUSIVAMENTE al salone autorizzato per proteggere formule colore,
+      //   note tecniche interne, storico debiti e annotazioni confidenziali del team.
+      match /clienti/{clientId} {
+        allow read: if isSalonAuthorized(salonId) || (
+          isAuthenticated() && (
+            request.auth.uid == clientId ||
+            resource.data.get('userId', '') == request.auth.uid ||
+            ('email' in request.auth.token && resource.data.get('email', '') == request.auth.token.email)
+          )
+        );
+        allow write: if isSalonAuthorized(salonId);
+      }
+
+      // 9. APPUNTAMENTI DEL SALONE
       match /appuntamenti/{appId} {
-        allow read: if request.auth != null && (
-          request.auth.uid == salonId ||
-          resource.data.salonRawId == request.auth.uid ||
-          resource.data.tenantId == request.auth.uid ||
-          resource.data.customerId == request.auth.uid ||
-          (resource.data.customer != null && resource.data.customer.id == request.auth.uid) ||
-          (resource.data.customer != null && resource.data.customer.email != null && resource.data.customer.email == request.auth.token.email)
+        allow read: if isSalonAuthorized(salonId) ||
+          resource.data.get('salonRawId', '') == request.auth.uid ||
+          resource.data.get('tenantId', '') == request.auth.uid ||
+          isAppointmentClient(resource.data);
+
+        allow create: if isAuthenticated();
+
+        allow update, delete: if isSalonAuthorized(salonId) ||
+          resource.data.get('salonRawId', '') == request.auth.uid ||
+          resource.data.get('tenantId', '') == request.auth.uid ||
+          isAppointmentClient(resource.data);
+      }
+
+      // 10. TRANSAZIONI E RICEVUTE DI CASSA
+      match /transactions/{txId} {
+        allow read, write: if isSalonAuthorized(salonId);
+      }
+
+      // 11. CHIUSURE DI CASSA GIORNALIERE (Registro fiscale)
+      match /daily_closings/{closingId} {
+        allow read, write: if isSalonAuthorized(salonId);
+      }
+
+      // 12. PRODOTTI E MAGAZZINO
+      match /prodotti/{prodId} {
+        allow read, write: if isSalonAuthorized(salonId);
+      }
+
+      // 13. MOVIMENTI DI STOCK / SCARICO MAGAZZINO
+      match /stock_movements/{movId} {
+        allow read, write: if isSalonAuthorized(salonId);
+      }
+
+      // 14. CATALOGO PACCHETTI PROMOZIONALI (Listino abbonamenti 5+1)
+      match /packages/{pkgId} {
+        allow read: if true;
+        allow write: if isSalonAuthorized(salonId);
+      }
+
+      // 15. TESSERE FEDELTÀ CLIENTI (Saldo punti loyalty)
+      match /loyalty_customers/{customerId} {
+        allow read: if isSalonAuthorized(salonId) || (
+          isAuthenticated() && (
+            request.auth.uid == customerId ||
+            ('phone_number' in request.auth.token && customerId == ('phone-' + request.auth.token.phone_number))
+          )
         );
-        allow create: if request.auth != null;
-        allow update, delete: if request.auth != null && (
-          request.auth.uid == salonId ||
-          resource.data.salonRawId == request.auth.uid ||
-          resource.data.tenantId == request.auth.uid ||
-          resource.data.customerId == request.auth.uid ||
-          (resource.data.customer != null && resource.data.customer.id == request.auth.uid)
+        allow write: if isSalonAuthorized(salonId);
+      }
+
+      // 16. PACCHETTI ACQUISTATI DAI CLIENTI (Customer Packages)
+      match /customer_packages/{custPkgId} {
+        allow read: if isSalonAuthorized(salonId) || (
+          isAuthenticated() && resource.data.get('customerId', '') == request.auth.uid
         );
+        allow write: if isSalonAuthorized(salonId);
+      }
+
+      // 17. STORICO MOVIMENTI PUNTI FEDELTÀ
+      match /loyalty_movements/{movId} {
+        allow read: if isSalonAuthorized(salonId) || (
+          isAuthenticated() && resource.data.get('customerId', '') == request.auth.uid
+        );
+        allow write: if isSalonAuthorized(salonId);
+      }
+
+      // 18. SYNC OUTBOX (Coda transazioni offline-first)
+      match /sync_outbox/{outboxId} {
+        allow read, write: if isSalonAuthorized(salonId);
       }
     }
 
-    // Collezione globale ridondante appuntamenti (/appointments/{appId})
+    // ===============================================================
+    // Collezione Globale Appuntamenti Ridondante (/appointments/{appId})
+    // ===============================================================
     match /appointments/{appId} {
-      allow read: if request.auth != null && (
-        resource.data.salonRawId == request.auth.uid ||
-        resource.data.tenantId == request.auth.uid ||
-        resource.data.customerId == request.auth.uid ||
-        (resource.data.customer != null && resource.data.customer.id == request.auth.uid) ||
-        (resource.data.customer != null && resource.data.customer.email != null && resource.data.customer.email == request.auth.token.email)
+      allow read: if isAuthenticated() && (
+        resource.data.get('salonRawId', '') == request.auth.uid ||
+        resource.data.get('tenantId', '') == request.auth.uid ||
+        isAppointmentClient(resource.data) ||
+        (resource.data.get('tenantId', '') != '' && isSalonAuthorized(resource.data.tenantId))
       );
-      allow create: if request.auth != null;
-      allow update, delete: if request.auth != null && (
-        resource.data.salonRawId == request.auth.uid ||
-        resource.data.tenantId == request.auth.uid ||
-        resource.data.customerId == request.auth.uid ||
-        (resource.data.customer != null && resource.data.customer.id == request.auth.uid)
+
+      allow create: if isAuthenticated();
+
+      allow update, delete: if isAuthenticated() && (
+        resource.data.get('salonRawId', '') == request.auth.uid ||
+        resource.data.get('tenantId', '') == request.auth.uid ||
+        isAppointmentClient(resource.data) ||
+        (resource.data.get('tenantId', '') != '' && isSalonAuthorized(resource.data.tenantId))
       );
     }
 
-    // Invio email (utilizzato per inviti staff ed estensioni mail)
+    // ===============================================================
+    // Invio Email Transazionali Firebase Extension (/mail/{mailId})
+    // ===============================================================
     match /mail/{mailId} {
-      allow create: if request.auth != null;
-      allow read: if request.auth != null;
+      allow create: if isAuthenticated();
+      allow read: if isAuthenticated();
     }
   }
 }

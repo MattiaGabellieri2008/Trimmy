@@ -1,8 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
-import { adminDb } from "@/lib/firebase-admin";
+import { adminDb, adminAuth } from "@/lib/firebase-admin";
 
 export async function POST(req: NextRequest) {
   try {
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return NextResponse.json(
+        { success: false, error: "Autenticazione richiesta per la riconciliazione." },
+        { status: 401 }
+      );
+    }
+
+    const idToken = authHeader.split("Bearer ")[1];
+    try {
+      await adminAuth.verifyIdToken(idToken);
+    } catch {
+      return NextResponse.json(
+        { success: false, error: "Token non valido o scaduto." },
+        { status: 401 }
+      );
+    }
+
     const body = await req.json().catch(() => ({}));
     const tenantId = body.tenantId || "tenant-default";
 

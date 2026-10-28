@@ -7,7 +7,8 @@ import {
   getDoc, 
   query, 
   where, 
-  orderBy 
+  orderBy,
+  writeBatch
 } from "firebase/firestore";
 import { getSalonTenantId } from "./tenant-helper";
 import { updateSalonAppointmentStatus } from "./appointments-service";
@@ -118,38 +119,48 @@ export async function saveCheckoutTransaction(
     issuedAt: transaction.issuedAt || new Date().toISOString()
   };
 
-  // 1. Salva in cache locale sincrona
+  // 1. Salva in cache locale sincrona (con retention limitata a 60 giorni per proteggere la quota 5MB)
   if (typeof window !== "undefined") {
     try {
       const existing = getLocalTransactions(tid);
-      const updated = [normalized, ...existing.filter((t) => t.id !== normalized.id)];
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - 60);
+      const cutoffIso = cutoff.toISOString();
+      const filteredExisting = existing.filter((t) => t.id !== normalized.id && t.issuedAt >= cutoffIso);
+      const updated = [normalized, ...filteredExisting];
       localStorage.setItem(`${TRANSACTIONS_KEY_PREFIX}${tid}`, JSON.stringify(updated));
     } catch (e) {
       console.warn("Errore cache transazione locale:", e);
     }
   }
 
-  // 2. Salva su Cloud Firestore nella sotto-collezione del salone
+  // 2. Salva su Cloud Firestore con Atomic Batch (Transazione + Aggiornamento Appuntamento)
   try {
+    const batch = writeBatch(db);
     const docRef = doc(db, "saloni", tid, "transactions", normalized.id);
-    await setDoc(docRef, normalized, { merge: true });
-  } catch (err) {
-    console.warn("Nota salvataggio transazione Firestore:", err);
-  }
+    batch.set(docRef, normalized, { merge: true });
 
-  // 3. Se associata a un appuntamento, imposta lo stato a COMPLETED
-  if (normalized.appointmentId) {
-    try {
-      await updateSalonAppointmentStatus(tid, normalized.salonRawId, normalized.appointmentId, "COMPLETED");
+    if (normalized.appointmentId) {
       const apptDocRef = doc(db, "saloni", tid, "appuntamenti", normalized.appointmentId);
-      await setDoc(apptDocRef, {
+      batch.set(apptDocRef, {
         status: "COMPLETED",
         paid: true,
         transactionId: normalized.id,
         paidAt: normalized.issuedAt
       }, { merge: true });
+    }
+
+    await batch.commit();
+  } catch (err) {
+    console.warn("Nota salvataggio atomico transazione Firestore:", err);
+  }
+
+  // 3. Sincronizzazione SQL appuntamento completato
+  if (normalized.appointmentId) {
+    try {
+      await updateSalonAppointmentStatus(tid, normalized.salonRawId, normalized.appointmentId, "COMPLETED");
     } catch (e) {
-      console.warn("Nota aggiornamento appuntamento saldato:", e);
+      console.warn("Nota aggiornamento SQL appuntamento saldato:", e);
     }
   }
 
@@ -238,7 +249,12 @@ export function getLocalTransactions(tenantId: string): CheckoutTransaction[] {
   if (typeof window === "undefined" || !tenantId) return [];
   try {
     const raw = localStorage.getItem(`${TRANSACTIONS_KEY_PREFIX}${getSalonTenantId(tenantId)}`);
-    return raw ? (JSON.parse(raw) as CheckoutTransaction[]) : [];
+    if (!raw) return [];
+    const list = JSON.parse(raw) as CheckoutTransaction[];
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 60);
+    const cutoffIso = cutoff.toISOString();
+    return list.filter((t) => t.issuedAt >= cutoffIso);
   } catch {
     return [];
   }

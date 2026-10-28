@@ -4,7 +4,7 @@ import { getSalonTenantId } from "./tenant-helper";
 
 import { NotificationSettings } from "./notifications-types";
 
-export type UserRole = "cliente" | "salone";
+export type UserRole = "cliente" | "salone" | "collaboratore";
 export type PlanType = "FREE" | "MEDIUM" | "PRO";
 export type PlanStatus = "ACTIVE" | "PAYMENT_REQUIRED" | "CANCELLED" | "TRIALING";
 
@@ -13,6 +13,8 @@ export interface UserProfile {
   email: string;
   displayName: string;
   role: UserRole;
+  salonId?: string;
+  isStaffMember?: boolean;
   salonName?: string;
   partitaIva?: string;
   staffCount?: number;

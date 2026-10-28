@@ -5,6 +5,28 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
 
+    <!-- Dichiarazione query per Android 11+ (API 30+) per WhatsApp, chiamate dialer e browser -->
+    <queries>
+        <!-- Permesso interrogazione browser web per link HTTPS -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
+        <!-- Permesso composizione chiamate vocali -->
+        <intent>
+            <action android:name="android.intent.action.DIAL" />
+            <data android:scheme="tel" />
+        </intent>
+        <!-- Permesso deep link WhatsApp standard e Business -->
+        <package android:name="com.whatsapp" />
+        <package android:name="com.whatsapp.w4b" />
+        <!-- Permesso client email -->
+        <intent>
+            <action android:name="android.intent.action.SENDTO" />
+            <data android:scheme="mailto" />
+        </intent>
+    </queries>
+
     <application
         android:label="Trimmy"
         android:name="${applicationName}"

@@ -1,4 +1,5 @@
-import { dataConnect } from "./firebase";
+import { dataConnect, db } from "./firebase";
+import { doc, setDoc } from "firebase/firestore";
 import { upsertTenant, upsertUser, upsertService } from "../dataconnect-generated";
 
 /**
@@ -64,6 +65,38 @@ export function getSalonTenantId(uid: string | null | undefined): string {
 }
 
 /**
+ * Risolve l'ID tenant del salone: se l'utente è un collaboratore associato a un salonId/tenantId ospitante,
+ * restituisce il tenant del salone di appartenenza. Altrimenti calcola il tenant dal proprio UID.
+ */
+export function resolveSalonTenantId(uid: string | null | undefined, salonId?: string | null): string {
+  if (salonId && salonId.trim()) {
+    return getSalonTenantId(salonId);
+  }
+  return getSalonTenantId(uid);
+}
+
+/**
+ * Restituisce il tenant ID attivo per l'utente corrente: se l'utente è un collaboratore
+ * (ruolo "collaboratore" o flag isStaffMember con salonId impostato nel profilo),
+ * restituisce il tenant del salone ospitante. Altrimenti restituisce il tenant calcolato sul suo UID.
+ */
+export function getActiveSalonTenantId(uid: string | null | undefined): string {
+  if (!uid) return "00000000-0000-4000-a000-000000000000";
+  if (typeof window !== "undefined") {
+    try {
+      const raw = localStorage.getItem(`trimmy_profile_${uid}`) || localStorage.getItem("trimmy_current_profile");
+      if (raw) {
+        const p = JSON.parse(raw);
+        if (p?.salonId && (p.role === "collaboratore" || p.isStaffMember)) {
+          return getSalonTenantId(p.salonId);
+        }
+      }
+    } catch (_) {}
+  }
+  return getSalonTenantId(uid);
+}
+
+/**
  * Assicura che il record Tenant esista nel database Cloud SQL PostgreSQL
  */
 export async function ensureSalonTenant(uid: string, salonName: string, planType: string = "FREE"): Promise<string> {
@@ -77,6 +110,19 @@ export async function ensureSalonTenant(uid: string, salonName: string, planType
     });
   } catch (err) {
     console.warn("Nota creazione tenant PostgreSQL:", err);
+  }
+  try {
+    const salonDocRef = doc(db, "saloni", tenantId);
+    await setDoc(salonDocRef, {
+      id: tenantId,
+      name: salonName || "Il Mio Salone",
+      ownerUid: uid,
+      userId: uid,
+      planType: planType || "FREE",
+      updatedAt: new Date().toISOString()
+    }, { merge: true });
+  } catch (err) {
+    console.warn("Nota sincronizzazione salon root Firestore:", err);
   }
   return tenantId;
 }

@@ -16,7 +16,8 @@ import {
   ShieldCheck
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { auth, googleProvider } from "@/lib/firebase";
+import { auth, googleProvider, db } from "@/lib/firebase";
+import { doc, setDoc } from "firebase/firestore";
 import { 
   signInWithPopup, 
   signInWithEmailAndPassword, 
@@ -34,6 +35,24 @@ import {
   UserProfile 
 } from "@/lib/user-profile";
 
+async function bindStaffToSalon(user: FirebaseUser, salonId: string, memberName?: string) {
+  try {
+    const staffDocRef = doc(db, "saloni", salonId, "staff", user.uid);
+    await setDoc(staffDocRef, {
+      id: user.uid,
+      uid: user.uid,
+      tenantId: salonId,
+      fullName: memberName || user.displayName || user.email || "Collaboratore",
+      email: user.email,
+      role: "Staff",
+      status: "ATTIVO",
+      acceptedAt: new Date().toISOString()
+    }, { merge: true });
+  } catch (err) {
+    console.warn("Nota associazione staff al salone:", err);
+  }
+}
+
 export default function LandingPage() {
   const router = useRouter();
 
@@ -48,6 +67,25 @@ export default function LandingPage() {
   const [staffCount, setStaffCount] = useState<number>(1);
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [formError, setFormError] = useState("");
+  const [inviteSalonId, setInviteSalonId] = useState<string | null>(null);
+  const [inviteEmail, setInviteEmail] = useState<string | null>(null);
+
+  // Cattura parametri di invito dal link (?inviteSalonId=...&inviteEmail=...)
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const sId = params.get("inviteSalonId");
+      const sEmail = params.get("inviteEmail");
+      if (sId) {
+        setInviteSalonId(sId);
+        setRole("collaboratore");
+      }
+      if (sEmail) {
+        setInviteEmail(sEmail);
+        setEmail(sEmail);
+      }
+    }
+  }, []);
 
   // Modal per completare profilo se primo login Google
   const [isPendingGoogleOnboarding, setIsPendingGoogleOnboarding] = useState(false);
@@ -55,9 +93,31 @@ export default function LandingPage() {
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      const currentInviteSalonId = inviteSalonId || (typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("inviteSalonId") : null);
       if (user) {
         // Recupera profilo aggiornato da Cloud Firestore (con fallback su cache locale)
         const p = await fetchUserProfile(user.uid, user.email) || getUserProfile(user.uid);
+
+        if (currentInviteSalonId) {
+          const staffProfile: UserProfile = {
+            ...(p || {
+              uid: user.uid,
+              email: user.email || "",
+              displayName: user.displayName || "Collaboratore",
+              createdAt: new Date().toISOString(),
+            }),
+            role: "collaboratore",
+            salonId: currentInviteSalonId,
+            isStaffMember: true,
+            planType: "PRO",
+            planStatus: "ACTIVE",
+            updatedAt: new Date().toISOString()
+          };
+          saveUserProfile(staffProfile);
+          await bindStaffToSalon(user, currentInviteSalonId, staffProfile.displayName);
+          router.push("/");
+          return;
+        }
 
         if (p) {
           if (p.role === "cliente") {
@@ -84,12 +144,34 @@ export default function LandingPage() {
     e.preventDefault();
     setFormError("");
     setIsLoading(true);
+    const currentInviteSalonId = inviteSalonId || (typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("inviteSalonId") : null);
 
     try {
       if (mode === "login") {
         const cred = await signInWithEmailAndPassword(auth, email, password);
         const user = cred.user;
         const profile = await fetchUserProfile(user.uid, user.email) || getUserProfile(user.uid);
+
+        if (currentInviteSalonId) {
+          const staffProfile: UserProfile = {
+            ...(profile || {
+              uid: user.uid,
+              email: user.email || email,
+              displayName: user.displayName || "Collaboratore",
+              createdAt: new Date().toISOString(),
+            }),
+            role: "collaboratore",
+            salonId: currentInviteSalonId,
+            isStaffMember: true,
+            planType: "PRO",
+            planStatus: "ACTIVE",
+            updatedAt: new Date().toISOString()
+          };
+          saveUserProfile(staffProfile);
+          await bindStaffToSalon(user, currentInviteSalonId, staffProfile.displayName);
+          router.push("/");
+          return;
+        }
 
         if (profile) {
           if (profile.role === "cliente") {
@@ -104,7 +186,7 @@ export default function LandingPage() {
         }
       } else {
         // Validazione campi obbligatori per Salone
-        if (role === "salone") {
+        if (!currentInviteSalonId && role === "salone") {
           if (!partitaIva.trim()) {
             setFormError("La Partita IVA è obbligatoria per creare un account Salone.");
             setIsLoading(false);
@@ -126,6 +208,25 @@ export default function LandingPage() {
           } catch (e) {
             console.error("Errore aggiornamento nome:", e);
           }
+        }
+
+        if (currentInviteSalonId) {
+          const staffProfile: UserProfile = {
+            uid: user.uid,
+            email: user.email || email,
+            displayName: name || "Collaboratore",
+            role: "collaboratore",
+            salonId: currentInviteSalonId,
+            isStaffMember: true,
+            staffCount: 1,
+            planType: "PRO",
+            planStatus: "ACTIVE",
+            createdAt: new Date().toISOString(),
+          };
+          saveUserProfile(staffProfile);
+          await bindStaffToSalon(user, currentInviteSalonId, name);
+          router.push("/");
+          return;
         }
 
         const plan = calculatePlan(role, staffCount);
@@ -160,9 +261,10 @@ export default function LandingPage() {
 
   const handleGoogleSignIn = async () => {
     setFormError("");
+    const currentInviteSalonId = inviteSalonId || (typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("inviteSalonId") : null);
 
     // Se siamo in modalità registrazione (signup), verifichiamo i campi prima del popup Google
-    if (mode === "signup" && role === "salone") {
+    if (!currentInviteSalonId && mode === "signup" && role === "salone") {
       if (!partitaIva.trim()) {
         setFormError("Inserisci la Partita IVA obbligatoria prima di procedere con Google.");
         return;
@@ -180,9 +282,50 @@ export default function LandingPage() {
 
       let profile = await fetchUserProfile(user.uid, user.email) || getUserProfile(user.uid);
 
+      if (currentInviteSalonId) {
+        const staffProfile: UserProfile = {
+          ...(profile || {
+            uid: user.uid,
+            email: user.email || "",
+            createdAt: new Date().toISOString(),
+          }),
+          displayName: user.displayName || name || "Collaboratore",
+          role: "collaboratore",
+          salonId: currentInviteSalonId,
+          isStaffMember: true,
+          staffCount: 1,
+          planType: "PRO",
+          planStatus: "ACTIVE",
+          updatedAt: new Date().toISOString()
+        };
+        saveUserProfile(staffProfile);
+        await bindStaffToSalon(user, currentInviteSalonId, staffProfile.displayName);
+        router.push("/");
+        return;
+      }
+
       if (!profile) {
         if (mode === "signup") {
-          const plan = calculatePlan(role, staffCount);
+          if (currentInviteSalonId) {
+          const staffProfile: UserProfile = {
+            uid: user.uid,
+            email: user.email || email,
+            displayName: name || "Collaboratore",
+            role: "collaboratore",
+            salonId: currentInviteSalonId,
+            isStaffMember: true,
+            staffCount: 1,
+            planType: "PRO",
+            planStatus: "ACTIVE",
+            createdAt: new Date().toISOString(),
+          };
+          saveUserProfile(staffProfile);
+          await bindStaffToSalon(user, currentInviteSalonId, name);
+          router.push("/");
+          return;
+        }
+
+        const plan = calculatePlan(role, staffCount);
           profile = {
             uid: user.uid,
             email: user.email || "",
@@ -364,6 +507,17 @@ export default function LandingPage() {
                 </button>
               </div>
 
+              {/* Banner Invito Collaboratore */}
+              {inviteSalonId && (
+                <div className="p-3.5 mb-4 bg-emerald-50 border border-emerald-200/80 rounded-xl text-xs text-emerald-900 flex items-start gap-2.5 animate-in fade-in duration-200">
+                  <Sparkles className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-bold block">Invito Salone Ricevuto</span>
+                    <span className="text-emerald-700">Sei stato invitato come collaboratore. Accedi o crea il tuo account per visualizzare l&apos;agenda condivisa e i clienti del salone.</span>
+                  </div>
+                </div>
+              )}
+
               {/* Errore Form */}
               {formError && (
                 <div className="p-3 mb-4 bg-rose-50 border border-rose-200/80 rounded-xl text-xs text-rose-800 flex items-start gap-2 animate-in fade-in duration-200">
@@ -377,6 +531,28 @@ export default function LandingPage() {
                 {/* Selezione Obbligatoria del Ruolo in caso di Registrazione */}
                 {mode === "signup" && (
                   <div className="space-y-4 animate-in fade-in duration-300">
+                    {inviteSalonId ? (
+                      <div className="space-y-3.5 p-3.5 bg-zinc-50/70 border border-zinc-200/70 rounded-2xl">
+                        <div>
+                          <label className="block text-xs font-semibold text-zinc-700 mb-1">
+                            Il Tuo Nome e Cognome <span className="text-rose-500">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            value={name}
+                            onChange={(e) => setName(e.target.value)}
+                            placeholder="Es. Mario Rossi"
+                            autoComplete="name"
+                            className="w-full px-3.5 py-2 border border-zinc-200 rounded-xl text-sm bg-white focus:ring-2 focus:ring-zinc-900 outline-none transition-all"
+                          />
+                        </div>
+                        <div className="p-2.5 bg-emerald-50 border border-emerald-200/60 rounded-xl text-[11px] text-emerald-800 font-medium">
+                          ✨ Con questo account collaboratore accederai direttamente all&apos;agenda del salone.
+                        </div>
+                      </div>
+                    ) : (
+                      <>
                     <div>
                       <label className="block text-xs font-semibold text-zinc-700 mb-1.5">
                         Tipo di Account da creare <span className="text-rose-500">*</span>
@@ -550,6 +726,8 @@ export default function LandingPage() {
                         </div>
                       </div>
                     )}
+                    </>
+                  )}
                   </div>
                 )}
 
@@ -602,7 +780,7 @@ export default function LandingPage() {
                 {/* Pulsante Submit Email/Password */}
                 <button
                   type="submit"
-                  disabled={isLoading || !email || !password || (mode === "signup" && (!name || (role === "salone" && !partitaIva)))}
+                  disabled={isLoading || !email || !password || (mode === "signup" && (!name || (!inviteSalonId && role === "salone" && !partitaIva)))}
                   className="w-full mt-2 flex justify-center items-center gap-2 py-2.5 px-4 rounded-xl shadow-sm text-sm font-semibold text-white bg-zinc-900 hover:bg-zinc-800 transition-all disabled:opacity-60 cursor-pointer"
                 >
                   {isLoading ? (
