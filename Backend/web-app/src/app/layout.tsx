@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import { ThemeProvider } from "@/components/ThemeProvider";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -60,9 +61,11 @@ export default function RootLayout({
     >
       <body 
         suppressHydrationWarning 
-        className="font-sans text-zinc-900 bg-zinc-50 min-h-full min-h-[100dvh]"
+        className="font-sans text-zinc-900 dark:text-zinc-100 bg-zinc-50 dark:bg-zinc-950 min-h-full min-h-[100dvh] transition-colors duration-200"
       >
-        {children}
+        <ThemeProvider>
+          {children}
+        </ThemeProvider>
       </body>
     </html>
   );

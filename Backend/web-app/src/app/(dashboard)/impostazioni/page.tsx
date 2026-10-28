@@ -2,7 +2,9 @@
 
 import { useState, useEffect, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { Settings, Shield, CreditCard, Building, User, Mail, Lock, Plus, Check, X, Loader2, LogOut, Trash2, AlertTriangle, Users, Copy, RotateCw, MessageSquare, Smartphone, Send, Clock, Star, BellRing, Sparkles, Share2 } from "lucide-react";
+import { Settings, Shield, CreditCard, Building, User, Mail, Lock, Plus, Check, X, Loader2, LogOut, Trash2, AlertTriangle, Users, Copy, RotateCw, MessageSquare, Smartphone, Send, Clock, Star, BellRing, Sparkles, Share2, Palette, Sun, Moon, Laptop, Paintbrush } from "lucide-react";
+import { useTheme } from "@/components/ThemeProvider";
+import { BRAND_PALETTES, BrandPalette, ThemeMode } from "@/lib/theme-store";
 import { auth } from "@/lib/firebase";
 import { onAuthStateChanged, updateProfile, signOut, deleteUser, User as FirebaseUser } from "firebase/auth";
 import { getUserProfile, fetchUserProfile, subscribeUserProfile, updateUserProfile, deleteUserProfile, UserProfile, PlanType } from "@/lib/user-profile";
@@ -40,7 +42,7 @@ import {
   DEFAULT_WORKING_HOURS 
 } from "@/lib/working-hours-store";
 
-type TabType = "profilo" | "salone" | "orari" | "team" | "notifiche" | "abbonamento";
+type TabType = "profilo" | "salone" | "brand" | "orari" | "team" | "notifiche" | "abbonamento";
 
 function ImpostazioniContent() {
   const searchParams = useSearchParams();
@@ -52,6 +54,44 @@ function ImpostazioniContent() {
   const [workingHours, setWorkingHours] = useState<DaySchedule[]>(DEFAULT_WORKING_HOURS);
   const [savingHours, setSavingHours] = useState(false);
   const [hoursSaveMessage, setHoursSaveMessage] = useState("");
+
+  // Theme & Brand Palette State
+  const { 
+    themeMode, 
+    setThemeMode, 
+    paletteId, 
+    setPaletteId, 
+    customHex, 
+    setCustomHex, 
+    resolvedPalette, 
+    saveCurrentSettings 
+  } = useTheme();
+  const [savingBrand, setSavingBrand] = useState(false);
+  const [brandSaveMessage, setBrandSaveMessage] = useState("");
+  const [customHexInput, setCustomHexInput] = useState(customHex || "#18181b");
+
+  useEffect(() => {
+    if (customHex) setCustomHexInput(customHex);
+  }, [customHex]);
+
+  const handleSaveBrand = async () => {
+    setSavingBrand(true);
+    setBrandSaveMessage("");
+    try {
+      await saveCurrentSettings({
+        themeMode,
+        paletteId,
+        customPrimaryHex: paletteId === "custom" ? customHexInput : undefined,
+      });
+      setBrandSaveMessage("Configurazione Brand & Aspetto salvata con successo!");
+      setTimeout(() => setBrandSaveMessage(""), 3500);
+    } catch (err) {
+      console.error("Errore salvataggio brand:", err);
+      setBrandSaveMessage("Errore durante il salvataggio.");
+    } finally {
+      setSavingBrand(false);
+    }
+  };
 
   // Auth state
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
@@ -248,7 +288,7 @@ function ImpostazioniContent() {
   // Leggi il parametro 'tab' dall'URL al montaggio
   useEffect(() => {
     const tab = searchParams.get("tab") as TabType;
-    if (tab && ["profilo", "salone", "orari", "team", "notifiche", "abbonamento"].includes(tab)) {
+    if (tab && ["profilo", "salone", "brand", "orari", "team", "notifiche", "abbonamento"].includes(tab)) {
       setActiveTab(tab);
     }
   }, [searchParams]);
@@ -547,28 +587,35 @@ function ImpostazioniContent() {
           <nav className="flex flex-row overflow-x-auto pb-2 md:pb-0 md:flex-col gap-1.5 scrollbar-hide">
             <button
               onClick={() => setActiveTab("profilo")}
-              className={`flex items-center gap-2 sm:gap-3 px-3.5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors text-left shrink-0 whitespace-nowrap ${activeTab === "profilo" ? "bg-zinc-100 text-zinc-900 font-semibold" : "text-zinc-500 hover:text-zinc-900 hover:bg-zinc-50"}`}
+              className={`flex items-center gap-2 sm:gap-3 px-3.5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors text-left shrink-0 whitespace-nowrap ${activeTab === "profilo" ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-white font-semibold border-l-2 border-brand" : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-50 dark:hover:bg-zinc-800"}`}
             >
               <User className="w-4 h-4" />
               Profilo Personale
             </button>
             <button
               onClick={() => setActiveTab("salone")}
-              className={`flex items-center gap-2 sm:gap-3 px-3.5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors text-left shrink-0 whitespace-nowrap ${activeTab === "salone" ? "bg-zinc-100 text-zinc-900 font-semibold" : "text-zinc-500 hover:text-zinc-900 hover:bg-zinc-50"}`}
+              className={`flex items-center gap-2 sm:gap-3 px-3.5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors text-left shrink-0 whitespace-nowrap ${activeTab === "salone" ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-white font-semibold border-l-2 border-brand" : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-50 dark:hover:bg-zinc-800"}`}
             >
               <Building className="w-4 h-4" />
               Dettagli Salone
             </button>
             <button
+              onClick={() => setActiveTab("brand")}
+              className={`flex items-center gap-2 sm:gap-3 px-3.5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors text-left shrink-0 whitespace-nowrap ${activeTab === "brand" ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-white font-semibold border-l-2 border-brand" : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-50 dark:hover:bg-zinc-800"}`}
+            >
+              <Palette className="w-4 h-4 text-brand" />
+              Brand & Aspetto
+            </button>
+            <button
               onClick={() => setActiveTab("orari")}
-              className={`flex items-center gap-2 sm:gap-3 px-3.5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors text-left shrink-0 whitespace-nowrap ${activeTab === "orari" ? "bg-zinc-100 text-zinc-900 font-semibold" : "text-zinc-500 hover:text-zinc-900 hover:bg-zinc-50"}`}
+              className={`flex items-center gap-2 sm:gap-3 px-3.5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors text-left shrink-0 whitespace-nowrap ${activeTab === "orari" ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-white font-semibold border-l-2 border-brand" : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-50 dark:hover:bg-zinc-800"}`}
             >
               <Clock className="w-4 h-4 text-amber-500" />
               Orari Salone
             </button>
             <button
               onClick={() => setActiveTab("team")}
-              className={`flex items-center gap-2 sm:gap-3 px-3.5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors text-left shrink-0 whitespace-nowrap ${activeTab === "team" ? "bg-zinc-100 text-zinc-900 font-semibold" : "text-zinc-500 hover:text-zinc-900 hover:bg-zinc-50"}`}
+              className={`flex items-center gap-2 sm:gap-3 px-3.5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors text-left shrink-0 whitespace-nowrap ${activeTab === "team" ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-white font-semibold border-l-2 border-brand" : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-50 dark:hover:bg-zinc-800"}`}
             >
               <Shield className="w-4 h-4" />
               Gestione Team
@@ -578,14 +625,14 @@ function ImpostazioniContent() {
                 setActiveTab("notifiche");
                 if (currentUser) loadNotificationData(getSalonTenantId(currentUser.uid));
               }}
-              className={`flex items-center gap-2 sm:gap-3 px-3.5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors text-left shrink-0 whitespace-nowrap ${activeTab === "notifiche" ? "bg-zinc-100 text-zinc-900 font-semibold" : "text-zinc-500 hover:text-zinc-900 hover:bg-zinc-50"}`}
+              className={`flex items-center gap-2 sm:gap-3 px-3.5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors text-left shrink-0 whitespace-nowrap ${activeTab === "notifiche" ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-white font-semibold border-l-2 border-brand" : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-50 dark:hover:bg-zinc-800"}`}
             >
               <BellRing className="w-4 h-4 text-indigo-600" />
               Notifiche Push (FCM)
             </button>
             <button
               onClick={() => setActiveTab("abbonamento")}
-              className={`flex items-center gap-2 sm:gap-3 px-3.5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors text-left shrink-0 whitespace-nowrap ${activeTab === "abbonamento" ? "bg-zinc-100 text-zinc-900 font-semibold" : "text-zinc-500 hover:text-zinc-900 hover:bg-zinc-50"}`}
+              className={`flex items-center gap-2 sm:gap-3 px-3.5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors text-left shrink-0 whitespace-nowrap ${activeTab === "abbonamento" ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-white font-semibold border-l-2 border-brand" : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-50 dark:hover:bg-zinc-800"}`}
             >
               <CreditCard className="w-4 h-4" />
               Abbonamento SaaS
@@ -594,7 +641,7 @@ function ImpostazioniContent() {
         </aside>
 
         {/* Contenuto Principale (Form e Viste) */}
-        <div className="flex-1 bg-white border border-zinc-200/60 rounded-xl p-4 sm:p-6 shadow-sm">
+        <div className="flex-1 bg-white dark:bg-zinc-900 border border-zinc-200/60 dark:border-zinc-800 rounded-xl p-4 sm:p-6 shadow-sm text-zinc-900 dark:text-zinc-100">
           
           {/* TAB: PROFILO */}
           {activeTab === "profilo" && (
@@ -812,7 +859,7 @@ function ImpostazioniContent() {
                 </div>
               </div>
 
-              <div className="pt-4 border-t border-zinc-100 flex items-center justify-between">
+              <div className="pt-4 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
                 {salonMessage ? (
                   <span className={`text-xs font-semibold ${salonMessage.includes("Errore") ? "text-rose-600" : "text-emerald-600"}`}>
                     {salonMessage}
@@ -822,10 +869,357 @@ function ImpostazioniContent() {
                 <button 
                   onClick={handleSaveSalon}
                   disabled={savingSalon}
-                  className="flex items-center gap-2 px-4 py-2 bg-zinc-900 text-white text-sm font-medium rounded-lg hover:bg-zinc-800 transition-colors disabled:opacity-50 cursor-pointer"
+                  className="flex items-center gap-2 px-4 py-2 bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 text-sm font-medium rounded-lg hover:bg-zinc-800 dark:hover:bg-zinc-100 transition-colors disabled:opacity-50 cursor-pointer"
                 >
                   {savingSalon ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
                   <span>Aggiorna Dati Salone</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* TAB: BRAND & ASPETTO (PALETTE SALONE & DARK MODE) */}
+          {activeTab === "brand" && (
+            <div className="space-y-8 animate-in fade-in duration-300">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-zinc-200/60 dark:border-zinc-800">
+                <div>
+                  <h3 className="text-lg font-semibold text-zinc-900 dark:text-white flex items-center gap-2">
+                    <Palette className="w-5 h-5 text-brand" />
+                    Brand & Aspetto Salone
+                  </h3>
+                  <p className="text-xs sm:text-sm text-zinc-500 dark:text-zinc-400 mt-0.5">
+                    Personalizza il tema dell&apos;interfaccia (Chiaro/Scuro) e il colore guida del tuo salone, sincronizzato su gestionale e vetrina online.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleSaveBrand}
+                  disabled={savingBrand}
+                  className="flex items-center gap-2 px-4 py-2 bg-brand hover:bg-brand-hover text-white text-sm font-semibold rounded-xl shadow-xs transition-all disabled:opacity-50 cursor-pointer self-start sm:self-auto shrink-0"
+                >
+                  {savingBrand ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                  <span>Salva Configurazione Brand</span>
+                </button>
+              </div>
+
+              {brandSaveMessage && (
+                <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded-xl text-xs sm:text-sm text-emerald-800 dark:text-emerald-300 flex items-center gap-2">
+                  <Check className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                  <span>{brandSaveMessage}</span>
+                </div>
+              )}
+
+              {/* 1. SELEZIONE MODALITÀ TEMA INTERFACCIA (DARK MODE) */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="text-sm font-bold text-zinc-900 dark:text-white">Modalità Interfaccia (Dark Mode)</h4>
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400">Scegli come visualizzare il gestionale su computer e tablet.</p>
+                  </div>
+                  <span className="text-[11px] font-mono uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+                    Attivo: {themeMode}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {/* Card Light */}
+                  <div
+                    onClick={() => setThemeMode("light")}
+                    className={`p-4 rounded-2xl border-2 cursor-pointer transition-all flex flex-col justify-between gap-3 ${
+                      themeMode === "light"
+                        ? "border-brand bg-zinc-50/80 dark:bg-zinc-800/80 ring-2 ring-brand/20 shadow-xs"
+                        : "border-zinc-200/80 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 bg-white dark:bg-zinc-900"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="w-10 h-10 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-600">
+                        <Sun className="w-5 h-5" />
+                      </div>
+                      {themeMode === "light" && (
+                        <span className="w-5 h-5 rounded-full bg-brand text-white flex items-center justify-center text-xs">
+                          <Check className="w-3 h-3" />
+                        </span>
+                      )}
+                    </div>
+                    <div>
+                      <h5 className="font-bold text-sm text-zinc-900 dark:text-white">Tema Chiaro</h5>
+                      <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5 leading-relaxed">
+                        Sfondo bianco puro e ad alto contrasto, ideale per ambienti luminosi.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Card Dark */}
+                  <div
+                    onClick={() => setThemeMode("dark")}
+                    className={`p-4 rounded-2xl border-2 cursor-pointer transition-all flex flex-col justify-between gap-3 ${
+                      themeMode === "dark"
+                        ? "border-brand bg-zinc-50/80 dark:bg-zinc-800/80 ring-2 ring-brand/20 shadow-xs"
+                        : "border-zinc-200/80 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 bg-white dark:bg-zinc-900"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="w-10 h-10 rounded-xl bg-indigo-950/60 border border-indigo-800 flex items-center justify-center text-indigo-400">
+                        <Moon className="w-5 h-5" />
+                      </div>
+                      {themeMode === "dark" && (
+                        <span className="w-5 h-5 rounded-full bg-brand text-white flex items-center justify-center text-xs">
+                          <Check className="w-3 h-3" />
+                        </span>
+                      )}
+                    </div>
+                    <div>
+                      <h5 className="font-bold text-sm text-zinc-900 dark:text-white">Tema Scuro</h5>
+                      <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5 leading-relaxed">
+                        Tonalità scura profonda (#09090b), riposante per gli occhi durante le lunghe giornate.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Card System */}
+                  <div
+                    onClick={() => setThemeMode("system")}
+                    className={`p-4 rounded-2xl border-2 cursor-pointer transition-all flex flex-col justify-between gap-3 ${
+                      themeMode === "system"
+                        ? "border-brand bg-zinc-50/80 dark:bg-zinc-800/80 ring-2 ring-brand/20 shadow-xs"
+                        : "border-zinc-200/80 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 bg-white dark:bg-zinc-900"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="w-10 h-10 rounded-xl bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 flex items-center justify-center text-zinc-700 dark:text-zinc-300">
+                        <Laptop className="w-5 h-5" />
+                      </div>
+                      {themeMode === "system" && (
+                        <span className="w-5 h-5 rounded-full bg-brand text-white flex items-center justify-center text-xs">
+                          <Check className="w-3 h-3" />
+                        </span>
+                      )}
+                    </div>
+                    <div>
+                      <h5 className="font-bold text-sm text-zinc-900 dark:text-white">Sistema (Auto)</h5>
+                      <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5 leading-relaxed">
+                        Si adatta automaticamente al tema di Windows, macOS, iPad o Android.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* 2. SELEZIONE PALETTE SALONE (BRAND IDENTITY) */}
+              <div className="space-y-4">
+                <div>
+                  <h4 className="text-sm font-bold text-zinc-900 dark:text-white">Palette Colore Salone</h4>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                    Seleziona una delle palette di lusso predefinite oppure definisci il tuo codice HEX personalizzato.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                  {BRAND_PALETTES.map((palette) => {
+                    const isSelected = paletteId === palette.id;
+                    return (
+                      <div
+                        key={palette.id}
+                        onClick={() => setPaletteId(palette.id)}
+                        className={`p-4 rounded-2xl border-2 cursor-pointer transition-all flex flex-col justify-between gap-3 ${
+                          isSelected
+                            ? "border-zinc-900 dark:border-white bg-zinc-50/60 dark:bg-zinc-800/60 shadow-sm"
+                            : "border-zinc-200/80 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 bg-white dark:bg-zinc-900"
+                        }`}
+                        style={{
+                          borderColor: isSelected ? palette.primaryHex : undefined,
+                        }}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2.5">
+                            <span 
+                              className="w-7 h-7 rounded-full shadow-xs border border-white/20 shrink-0" 
+                              style={{ backgroundColor: palette.primaryHex }}
+                            />
+                            <span className="font-bold text-sm text-zinc-900 dark:text-white">
+                              {palette.name}
+                            </span>
+                          </div>
+                          {isSelected && (
+                            <span 
+                              className="w-5 h-5 rounded-full text-white flex items-center justify-center text-xs shrink-0"
+                              style={{ backgroundColor: palette.primaryHex }}
+                            >
+                              <Check className="w-3 h-3" />
+                            </span>
+                          )}
+                        </div>
+
+                        <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
+                          {palette.description}
+                        </p>
+
+                        <div className="pt-2 border-t border-zinc-100 dark:border-zinc-800/80 flex items-center justify-between text-[11px] font-mono">
+                          <span className="text-zinc-400">HEX: {palette.primaryHex}</span>
+                          <span 
+                            className="px-2 py-0.5 rounded-md font-semibold text-[10px]"
+                            style={{ 
+                              backgroundColor: palette.subtleHex,
+                              color: palette.primaryHex
+                            }}
+                          >
+                            Sample
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {/* Card Colore Personalizzato (HEX) */}
+                  <div
+                    onClick={() => setPaletteId("custom")}
+                    className={`p-4 rounded-2xl border-2 cursor-pointer transition-all flex flex-col justify-between gap-3 ${
+                      paletteId === "custom"
+                        ? "border-zinc-900 dark:border-white bg-zinc-50/60 dark:bg-zinc-800/60 shadow-sm"
+                        : "border-zinc-200/80 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 bg-white dark:bg-zinc-900"
+                    }`}
+                    style={{
+                      borderColor: paletteId === "custom" ? customHexInput : undefined,
+                    }}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2.5">
+                        <label 
+                          htmlFor="customColorPicker" 
+                          className="w-7 h-7 rounded-full shadow-xs border border-white/20 shrink-0 cursor-pointer overflow-hidden relative block"
+                          style={{ backgroundColor: customHexInput }}
+                        >
+                          <input
+                            id="customColorPicker"
+                            type="color"
+                            value={customHexInput.startsWith("#") ? customHexInput : "#18181b"}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setCustomHexInput(val);
+                              setCustomHex(val);
+                            }}
+                            className="opacity-0 absolute inset-0 cursor-pointer w-full h-full"
+                          />
+                        </label>
+                        <span className="font-bold text-sm text-zinc-900 dark:text-white flex items-center gap-1.5">
+                          <Paintbrush className="w-3.5 h-3.5 text-zinc-400" />
+                          Personalizzato
+                        </span>
+                      </div>
+                      {paletteId === "custom" && (
+                        <span 
+                          className="w-5 h-5 rounded-full text-white flex items-center justify-center text-xs shrink-0"
+                          style={{ backgroundColor: customHexInput }}
+                        >
+                          <Check className="w-3 h-3" />
+                        </span>
+                      )}
+                    </div>
+
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
+                      Scegli qualsiasi colore HEX conforme alla tua brand identity aziendale.
+                    </p>
+
+                    <div className="pt-2 border-t border-zinc-100 dark:border-zinc-800/80 flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={customHexInput}
+                        maxLength={7}
+                        placeholder="#18181b"
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setCustomHexInput(val);
+                          if (/^#[0-9A-Fa-f]{6}$/.test(val)) {
+                            setCustomHex(val);
+                          }
+                        }}
+                        className="w-full px-2.5 py-1 text-xs font-mono rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white uppercase focus:outline-none focus:ring-1 focus:ring-zinc-500"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* 3. ANTEPRIMA LIVE IN TEMPO REALE */}
+              <div className="space-y-3">
+                <div>
+                  <h4 className="text-sm font-bold text-zinc-900 dark:text-white">Anteprima Live Componenti Brand</h4>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                    Ecco come appariranno i tuoi pulsanti, badge e accenti con la combinazione attuale:
+                  </p>
+                </div>
+
+                <div className="p-5 rounded-2xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200/80 dark:border-zinc-800 space-y-4">
+                  <div className="flex flex-wrap items-center gap-3">
+                    {/* Bottone Primario Brand */}
+                    <button
+                      type="button"
+                      className="px-4 py-2.5 bg-brand hover:bg-brand-hover text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-2 cursor-default"
+                    >
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>Pulsante Primario &bull; Prenota</span>
+                    </button>
+
+                    {/* Badge Pill Brand */}
+                    <span className="px-3 py-1.5 rounded-full text-xs font-bold bg-brand-subtle text-brand border border-brand flex items-center gap-1.5">
+                      <Star className="w-3.5 h-3.5 fill-current" />
+                      Trattamento Top Salone
+                    </span>
+
+                    {/* Badge Stato */}
+                    <span className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white border-l-4 border-brand shadow-2xs">
+                      Stato Appuntamento: Confermato
+                    </span>
+
+                    {/* Prezzo di Esempio */}
+                    <div className="flex items-baseline gap-1 px-3 py-1 bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200/60 dark:border-zinc-800">
+                      <span className="text-xs text-zinc-400">Da</span>
+                      <span className="text-base font-black text-brand">€ 48,00</span>
+                    </div>
+                  </div>
+
+                  {/* Mockup Pagina Vetrina Pubblica */}
+                  <div className="p-4 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200/60 dark:border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-extrabold text-sm text-zinc-900 dark:text-white">
+                          {salonName || "Atelier Bellezza & Barber"}
+                        </span>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-brand text-white">
+                          Vetrina Pubblica
+                        </span>
+                      </div>
+                      <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                        Questo colore guiderà i tuoi clienti dal Marketplace fino alla conferma dell&apos;appuntamento.
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button 
+                        type="button" 
+                        className="px-3.5 py-1.5 bg-brand hover:bg-brand-hover text-white rounded-xl text-xs font-bold transition-all shadow-xs"
+                      >
+                        Prenota Subito
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Pulsante Salva in fondo per comodità */}
+              <div className="pt-4 border-t border-zinc-200/60 dark:border-zinc-800 flex items-center justify-between">
+                <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                  Le modifiche al tema vengono applicate istantaneamente a tutti i dispositivi del salone.
+                </p>
+                <button
+                  type="button"
+                  onClick={handleSaveBrand}
+                  disabled={savingBrand}
+                  className="flex items-center gap-2 px-5 py-2.5 bg-brand hover:bg-brand-hover text-white text-sm font-semibold rounded-xl shadow-xs transition-all disabled:opacity-50 cursor-pointer"
+                >
+                  {savingBrand ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                  <span>Salva Configurazione</span>
                 </button>
               </div>
             </div>

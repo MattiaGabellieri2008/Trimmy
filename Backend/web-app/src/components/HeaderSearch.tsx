@@ -214,7 +214,7 @@ export function HeaderSearch() {
             setIsOpen(true);
           }}
           placeholder="Cerca clienti, trattamenti..." 
-          className="w-full pl-9 sm:pl-10 pr-8 sm:pr-9 py-2 bg-zinc-50 border border-zinc-200/80 rounded-xl text-xs sm:text-sm placeholder:text-zinc-400 placeholder:truncate focus:outline-none focus:bg-white focus:border-zinc-300 focus:ring-4 focus:ring-zinc-100 transition-all shadow-2xs"
+          className="w-full pl-9 sm:pl-10 pr-8 sm:pr-9 py-2 bg-zinc-50 dark:bg-zinc-800/80 border border-zinc-200/80 dark:border-zinc-700 rounded-xl text-xs sm:text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 placeholder:truncate focus:outline-none focus:bg-white dark:focus:bg-zinc-800 focus:border-zinc-300 dark:focus:border-zinc-600 focus:ring-4 focus:ring-zinc-100 dark:focus:ring-zinc-800/50 transition-all shadow-2xs"
         />
         {query && (
           <button 
@@ -232,12 +232,12 @@ export function HeaderSearch() {
 
       {/* Menu a tendina dei Risultati Intelligenti */}
       {isOpen && (
-        <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-zinc-200 rounded-2xl shadow-xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-1 duration-150 max-h-[460px] overflow-y-auto">
+        <div className="absolute top-full left-0 right-0 mt-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-1 duration-150 max-h-[460px] overflow-y-auto">
           
           {/* A. Stato Vuoto (Consigli di ricerca rapida) */}
           {!query.trim() && (
             <div className="p-4 space-y-3">
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500 flex items-center gap-1.5">
                 <Sparkles className="w-3.5 h-3.5 text-zinc-500" />
                 Ricerche consigliate
               </p>
@@ -246,15 +246,15 @@ export function HeaderSearch() {
                   <button
                     key={item}
                     onClick={() => handleApplySuggestion(item)}
-                    className="px-2.5 py-1 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 text-xs font-medium rounded-lg transition-colors cursor-pointer"
+                    className="px-2.5 py-1 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 text-xs font-medium rounded-lg transition-colors cursor-pointer"
                   >
                     {item}
                   </button>
                 ))}
               </div>
 
-              <div className="pt-2 border-t border-zinc-100">
-                <p className="text-[11px] text-zinc-400">
+              <div className="pt-2 border-t border-zinc-100 dark:border-zinc-800">
+                <p className="text-[11px] text-zinc-400 dark:text-zinc-500">
                   💡 Puoi cercare per nome cliente, numero telefonico, tipo di trattamento o parola chiave (es. <em>biondo</em>, <em>tinta</em>, <em>orari</em>).
                 </p>
               </div>

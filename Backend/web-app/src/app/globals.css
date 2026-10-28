@@ -1,5 +1,55 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ==========================================================================
+   BRAND THEME & CSS CUSTOM PROPERTIES
+   ========================================================================== */
+:root {
+  --brand-primary: #18181b;
+  --brand-primary-hover: #27272a;
+  --brand-ring: rgba(24, 24, 27, 0.25);
+  --brand-subtle: #f4f4f5;
+  --brand-text: #ffffff;
+}
+
+html.dark {
+  color-scheme: dark;
+  background-color: #09090b;
+  color: #f4f4f5;
+}
+
+html.dark body {
+  background-color: #09090b;
+  color: #f4f4f5;
+}
+
+/* Brand Utility Classes */
+.bg-brand {
+  background-color: var(--brand-primary) !important;
+  color: var(--brand-text) !important;
+}
+
+.hover\:bg-brand-hover:hover {
+  background-color: var(--brand-primary-hover) !important;
+}
+
+.text-brand {
+  color: var(--brand-primary) !important;
+}
+
+.border-brand {
+  border-color: var(--brand-primary) !important;
+}
+
+.ring-brand {
+  --tw-ring-color: var(--brand-ring) !important;
+}
+
+.bg-brand-subtle {
+  background-color: var(--brand-subtle) !important;
+}
+
 /* ==========================================================================
    OTTIMIZZAZIONE MULTI-BROWSER (CHROME, SAFARI, FIREFOX, EDGE, IOS, ANDROID)
    ========================================================================== */
@@ -11,7 +61,6 @@ html {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
-  color-scheme: light;
 }
 
 body {

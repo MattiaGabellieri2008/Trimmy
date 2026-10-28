@@ -151,17 +151,17 @@ export function NotificationBell() {
         }}
         className={`relative flex items-center justify-center p-2 rounded-xl transition-all cursor-pointer border shadow-2xs ${
           isOpen
-            ? "bg-zinc-100 text-zinc-900 border-zinc-300"
-            : "bg-white text-zinc-600 hover:text-zinc-950 hover:bg-zinc-50 border-zinc-200/80 hover:border-zinc-300"
+            ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-white border-zinc-300 dark:border-zinc-700"
+            : "bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-300 hover:text-zinc-950 dark:hover:text-white hover:bg-zinc-50 dark:hover:bg-zinc-800 border-zinc-200/80 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700"
         }`}
         title="Centro Notifiche Salone"
         aria-label="Centro Notifiche Salone"
       >
-        <Bell className="w-4 h-4 text-zinc-700" strokeWidth={2.2} />
+        <Bell className="w-4 h-4 text-zinc-700 dark:text-zinc-300" strokeWidth={2.2} />
         
         {/* Badge conteggio effettivo (mostrato SOLO se ci sono reali notifiche non lette) */}
         {unreadCount > 0 && (
-          <span className="absolute -top-1 -right-1 flex items-center justify-center min-w-[18px] h-[18px] px-1 text-[10px] font-bold text-white bg-zinc-900 rounded-full ring-2 ring-white animate-in zoom-in-50 duration-200">
+          <span className="absolute -top-1 -right-1 flex items-center justify-center min-w-[18px] h-[18px] px-1 text-[10px] font-bold text-white bg-brand rounded-full ring-2 ring-white dark:ring-zinc-900 animate-in zoom-in-50 duration-200">
             {unreadCount}
           </span>
         )}
@@ -169,16 +169,16 @@ export function NotificationBell() {
 
       {/* Dropdown Menu Notifiche */}
       {isOpen && (
-        <div className="absolute right-0 mt-2.5 w-[min(24rem,calc(100vw-1.5rem))] bg-white border border-zinc-200 rounded-2xl shadow-xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-1 duration-150">
+        <div className="absolute right-0 mt-2.5 w-[min(24rem,calc(100vw-1.5rem))] bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-1 duration-150">
           
           {/* Header del Centro Notifiche */}
-          <div className="p-4 border-b border-zinc-100 flex items-center justify-between bg-zinc-50/50">
+          <div className="p-4 border-b border-zinc-100 dark:border-zinc-800 flex items-center justify-between bg-zinc-50/50 dark:bg-zinc-800/50">
             <div>
               <div className="flex items-center gap-1.5">
-                <h3 className="text-sm font-semibold text-zinc-900 tracking-tight">Notifiche Salone</h3>
+                <h3 className="text-sm font-semibold text-zinc-900 dark:text-white tracking-tight">Notifiche Salone</h3>
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" title="Sincronizzato in tempo reale" />
               </div>
-              <p className="text-[11px] text-zinc-400 mt-0.5">
+              <p className="text-[11px] text-zinc-400 dark:text-zinc-500 mt-0.5">
                 {unreadCount > 0 
                   ? `${unreadCount} ${unreadCount === 1 ? "notifica effettiva da leggere" : "notifiche effettive da leggere"}` 
                   : "Tutto aggiornato • Nessun avviso pendente"}
@@ -187,7 +187,7 @@ export function NotificationBell() {
             {unreadCount > 0 && (
               <button
                 onClick={handleMarkAllAsRead}
-                className="text-[11px] font-medium text-zinc-500 hover:text-zinc-900 transition-colors cursor-pointer"
+                className="text-[11px] font-medium text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200 transition-colors cursor-pointer"
               >
                 Segna lette
               </button>

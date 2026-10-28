@@ -40,6 +40,7 @@ import { fetchSalonById } from "@/lib/salons-service";
 import { fetchSalonStaff } from "@/lib/staff-store";
 import BookingWizardModal from "@/components/BookingWizardModal";
 import SalonShareModal from "@/components/SalonShareModal";
+import { fetchSalonThemeSettings, applyThemeToDocument } from "@/lib/theme-store";
 
 // Collezioni immagini Lookbook e Salon Interior stile Airbnb
 const SALON_GALLERIES: Record<string, string[]> = {
@@ -107,6 +108,12 @@ function SalonePageContent() {
       fetchSalonStaff(salonId).then((staff) => {
         if (staff && staff.length > 0) {
           setStaffList(staff);
+        }
+      });
+
+      fetchSalonThemeSettings(salonId).then((theme) => {
+        if (theme) {
+          applyThemeToDocument(theme);
         }
       });
     }
@@ -338,7 +345,7 @@ function SalonePageContent() {
                 onClick={() => setActiveTab("listino")}
                 className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
                   activeTab === "listino"
-                    ? "bg-zinc-900 text-white shadow-xs"
+                    ? "bg-brand text-white shadow-xs"
                     : "text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100"
                 }`}
               >
@@ -348,7 +355,7 @@ function SalonePageContent() {
                 onClick={() => setActiveTab("team")}
                 className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
                   activeTab === "team"
-                    ? "bg-zinc-900 text-white shadow-xs"
+                    ? "bg-brand text-white shadow-xs"
                     : "text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100"
                 }`}
               >
@@ -358,7 +365,7 @@ function SalonePageContent() {
                 onClick={() => setActiveTab("lookbook")}
                 className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
                   activeTab === "lookbook"
-                    ? "bg-zinc-900 text-white shadow-xs"
+                    ? "bg-brand text-white shadow-xs"
                     : "text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100"
                 }`}
               >
@@ -368,7 +375,7 @@ function SalonePageContent() {
                 onClick={() => setActiveTab("recensioni")}
                 className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
                   activeTab === "recensioni"
-                    ? "bg-zinc-900 text-white shadow-xs"
+                    ? "bg-brand text-white shadow-xs"
                     : "text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100"
                 }`}
               >
@@ -378,7 +385,7 @@ function SalonePageContent() {
                 onClick={() => setActiveTab("orari")}
                 className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
                   activeTab === "orari"
-                    ? "bg-zinc-900 text-white shadow-xs"
+                    ? "bg-brand text-white shadow-xs"
                     : "text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100"
                 }`}
               >
@@ -439,7 +446,7 @@ function SalonePageContent() {
                                     setPreselectedServiceId(String(service.id));
                                     setIsBookingOpen(true);
                                   }}
-                                  className="mt-1.5 px-3.5 py-1.5 bg-zinc-900 hover:bg-zinc-800 text-white rounded-xl text-xs font-bold transition-all shadow-2xs active:scale-95 cursor-pointer"
+                                  className="mt-1.5 px-3.5 py-1.5 bg-brand hover:bg-brand-hover text-white rounded-xl text-xs font-bold transition-all shadow-2xs active:scale-95 cursor-pointer"
                                 >
                                   Prenota
                                 </button>
@@ -696,7 +703,7 @@ function SalonePageContent() {
                   setPreselectedServiceId(undefined);
                   setIsBookingOpen(true);
                 }}
-                className="w-full py-4 bg-zinc-950 hover:bg-zinc-800 text-white rounded-2xl font-black text-sm tracking-wide shadow-lg hover:shadow-xl transition-all flex items-center justify-center gap-2 active:scale-95 cursor-pointer"
+                className="w-full py-4 bg-brand hover:bg-brand-hover text-white rounded-2xl font-black text-sm tracking-wide shadow-lg hover:shadow-xl transition-all flex items-center justify-center gap-2 active:scale-95 cursor-pointer"
               >
                 <CalendarCheck2 className="w-4 h-4" />
                 <span>Prenota Appuntamento</span>

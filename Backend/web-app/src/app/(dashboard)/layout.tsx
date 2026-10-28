@@ -7,6 +7,7 @@ import { Sidebar } from "@/components/Sidebar";
 import { HeaderSearch } from "@/components/HeaderSearch";
 import { NotificationBell } from "@/components/NotificationBell";
 import { MobileBottomNav } from "@/components/MobileBottomNav";
+import { ThemeToggleQuick } from "@/components/ThemeProvider";
 import { auth } from "@/lib/firebase";
 import { onAuthStateChanged } from "firebase/auth";
 import { getUserProfile, fetchUserProfile, subscribeUserProfile } from "@/lib/user-profile";
@@ -40,7 +41,7 @@ export default function DashboardLayout({
   }, [router]);
 
   return (
-    <div className="flex h-screen h-[100dvh] bg-white font-sans text-zinc-900 overflow-hidden w-full">
+    <div className="flex h-screen h-[100dvh] bg-white dark:bg-zinc-950 font-sans text-zinc-900 dark:text-zinc-100 overflow-hidden w-full transition-colors duration-200">
       {/* 1. Sidebar per Desktop & Tablet Orizzontale */}
       <Sidebar />
 
@@ -49,7 +50,7 @@ export default function DashboardLayout({
         <div className="fixed inset-0 z-50 md:hidden flex animate-in fade-in duration-200">
           {/* Overlay scuro cliccabile */}
           <div 
-            className="fixed inset-0 bg-zinc-900/40 backdrop-blur-xs transition-opacity"
+            className="fixed inset-0 bg-zinc-900/60 backdrop-blur-xs transition-opacity"
             onClick={() => setIsMobileMenuOpen(false)}
           />
           {/* Contenitore drawer che scivola da sinistra */}
@@ -60,22 +61,22 @@ export default function DashboardLayout({
       )}
 
       {/* 3. Contenuto Principale con Header Adattivo */}
-      <div className="flex-1 flex flex-col overflow-hidden bg-[#fafafa]">
+      <div className="flex-1 flex flex-col overflow-hidden bg-[#fafafa] dark:bg-zinc-900/60">
         
         {/* Header superiore: responsive per mobile, tablet e desktop */}
-        <header className="h-16 bg-white border-b border-zinc-200/60 flex items-center justify-between px-3 sm:px-6 lg:px-8 z-20 shrink-0 gap-2 sm:gap-4">
+        <header className="h-16 bg-white dark:bg-zinc-900 border-b border-zinc-200/60 dark:border-zinc-800 flex items-center justify-between px-3 sm:px-6 lg:px-8 z-20 shrink-0 gap-2 sm:gap-4 transition-colors">
           
           {/* Pulsante Hamburger + Logo su Mobile */}
           <div className="flex items-center gap-2 md:hidden">
             <button
               onClick={() => setIsMobileMenuOpen(true)}
-              className="p-2 text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100 rounded-xl transition-colors border border-zinc-200/70"
+              className="p-2 text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl transition-colors border border-zinc-200/70 dark:border-zinc-800"
               title="Menu di navigazione"
               aria-label="Apri menu"
             >
               <Menu className="w-4 h-4" />
             </button>
-            <span className="font-bold text-base tracking-tight text-zinc-900">
+            <span className="font-bold text-base tracking-tight text-zinc-900 dark:text-white">
               Trimmy.
             </span>
           </div>
@@ -85,8 +86,9 @@ export default function DashboardLayout({
             <HeaderSearch />
           </div>
 
-          {/* Azioni rapide a destra (Notifiche) */}
+          {/* Azioni rapide a destra (Dark Mode Toggle + Notifiche) */}
           <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+            <ThemeToggleQuick compact />
             <NotificationBell />
           </div>
         </header>
