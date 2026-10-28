@@ -6,7 +6,7 @@ import { NotificationSettings } from "./notifications-types";
 
 export type UserRole = "cliente" | "salone";
 export type PlanType = "FREE" | "MEDIUM" | "PRO";
-export type PlanStatus = "ACTIVE" | "PAYMENT_REQUIRED";
+export type PlanStatus = "ACTIVE" | "PAYMENT_REQUIRED" | "CANCELLED" | "TRIALING";
 
 export interface UserProfile {
   uid: string;
@@ -19,6 +19,9 @@ export interface UserProfile {
   planType: PlanType;
   planStatus: PlanStatus;
   billingPeriod?: "monthly" | "yearly";
+  stripeCustomerId?: string;
+  stripeSubscriptionId?: string;
+  subscriptionCurrentPeriodEnd?: string;
   createdAt: string;
   updatedAt?: string;
 

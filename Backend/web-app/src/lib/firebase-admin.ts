@@ -1,6 +1,7 @@
 import { initializeApp, getApps, cert, type App } from "firebase-admin/app";
 import { getAuth, type Auth } from "firebase-admin/auth";
 import { getMessaging, type Messaging } from "firebase-admin/messaging";
+import { getFirestore, type Firestore } from "firebase-admin/firestore";
 
 /**
  * Inizializza Firebase Admin SDK in modo singleton per le API Route Next.js.
@@ -33,13 +34,13 @@ function getAdminApp(): App {
   // Fallback: Application Default Credentials (ADC)
   // Funziona automaticamente su Cloud Run, App Hosting, e localmente con `gcloud auth application-default login`
   return initializeApp({
-    projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || process.env.FIREBASE_PROJECT_ID,
+    projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || process.env.FIREBASE_PROJECT_ID || "trimmy-saloni",
   });
 }
 
 const adminApp: App = getAdminApp();
 const adminAuth: Auth = getAuth(adminApp);
 const adminMessaging: Messaging = getMessaging(adminApp);
+const adminDb: Firestore = getFirestore(adminApp);
 
-export { adminApp, adminAuth, adminMessaging };
-
+export { adminApp, adminAuth, adminMessaging, adminDb };
