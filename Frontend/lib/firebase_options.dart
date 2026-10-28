@@ -58,3 +58,4 @@ class DefaultFirebaseOptions {
     iosBundleId: 'com.trimmy.app',
   );
 }
+
