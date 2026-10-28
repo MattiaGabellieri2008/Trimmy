@@ -228,7 +228,10 @@ class _PosCheckoutScreenState extends State<PosCheckoutScreen> {
                       child: ElevatedButton.icon(
                         onPressed: () => _processCheckout('CONTANTI'),
                         icon: const Icon(Icons.payments_outlined, size: 18),
-                        label: const Text('Contanti'),
+                        label: const FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text('Contanti'),
+                        ),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppColors.zinc800,
                           foregroundColor: AppColors.white,
@@ -242,7 +245,10 @@ class _PosCheckoutScreenState extends State<PosCheckoutScreen> {
                       child: ElevatedButton.icon(
                         onPressed: () => _processCheckout('CARTA_POS'),
                         icon: const Icon(Icons.credit_card, size: 18),
-                        label: const Text('Carta / POS'),
+                        label: const FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text('Carta / POS'),
+                        ),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppColors.obsidianBlack,
                           foregroundColor: AppColors.white,
@@ -308,24 +314,48 @@ class _PosCheckoutScreenState extends State<PosCheckoutScreen> {
   void _showAddServiceSheet(List<SalonService> services) {
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (_) => Container(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Aggiungi Trattamento allo Scontrino', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-            const SizedBox(height: 12),
-            ...services.map((s) => ListTile(
-                  title: Text(s.name, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-                  trailing: Text('€${s.price.toStringAsFixed(0)}', style: const TextStyle(fontWeight: FontWeight.bold)),
-                  onTap: () {
-                    setState(() => _cartItems.add(s));
-                    Navigator.pop(context);
-                  },
-                )),
-          ],
+      builder: (_) => SafeArea(
+        top: false,
+        child: Container(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.75,
+          ),
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 36,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: AppColors.zinc300,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const Text('Aggiungi Trattamento allo Scontrino', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              const SizedBox(height: 12),
+              Flexible(
+                child: SingleChildScrollView(
+                  child: Column(
+                    children: services.map((s) => ListTile(
+                      title: Text(s.name, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                      trailing: Text('€${s.price.toStringAsFixed(0)}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                      onTap: () {
+                        setState(() => _cartItems.add(s));
+                        Navigator.pop(context);
+                      },
+                    )).toList(),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

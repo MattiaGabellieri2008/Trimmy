@@ -11,8 +11,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Piano non valido. Scegli tra MEDIUM o PRO." }, { status: 400 });
     }
 
-    // Identificazione utente tramite Bearer token o fallback da body
-    let userId = bodyUserId;
+    // Identificazione utente tramite Bearer token verificato con Firebase Admin
+    let userId: string | null = null;
     let email = userEmail;
     const authHeader = req.headers.get("Authorization");
 
@@ -23,12 +23,17 @@ export async function POST(req: NextRequest) {
         userId = decoded.uid;
         if (decoded.email) email = decoded.email;
       } catch (e) {
-        console.warn("[stripe/checkout-session] Token Firebase non valido, fallback su userId fornito:", e);
+        console.warn("[stripe/checkout-session] Token Firebase non valido:", e);
       }
     }
 
+    // In modalità sviluppo locale è tollerato il fallback sul body, in produzione è severamente bloccato
+    if (!userId && process.env.NODE_ENV !== "production") {
+      userId = bodyUserId;
+    }
+
     if (!userId) {
-      return NextResponse.json({ error: "Utente non autenticato. Effettua il login per proseguire." }, { status: 401 });
+      return NextResponse.json({ error: "Utente non autenticato. Token Bearer valido obbligatorio." }, { status: 401 });
     }
 
     const planConfig = SAAS_PLANS[planType as "MEDIUM" | "PRO"];

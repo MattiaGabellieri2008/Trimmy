@@ -5,7 +5,7 @@ import { adminAuth, adminDb } from "@/lib/firebase-admin";
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
-    let userId = body?.userId;
+    let userId: string | null = null;
 
     const authHeader = req.headers.get("Authorization");
     if (authHeader && authHeader.startsWith("Bearer ")) {
@@ -14,12 +14,17 @@ export async function POST(req: NextRequest) {
         const decoded = await adminAuth.verifyIdToken(idToken);
         userId = decoded.uid;
       } catch (e) {
-        console.warn("[stripe/customer-portal] Token Firebase non valido, fallback su userId:", e);
+        console.warn("[stripe/customer-portal] Token Firebase non valido:", e);
       }
     }
 
+    // In ambiente di sviluppo è concesso il fallback sul body, in produzione l'autenticazione crittografica è obbligatoria
+    if (!userId && process.env.NODE_ENV !== "production") {
+      userId = body?.userId;
+    }
+
     if (!userId) {
-      return NextResponse.json({ error: "Utente non autenticato." }, { status: 401 });
+      return NextResponse.json({ error: "Accesso non autorizzato. Token di autenticazione Bearer valido obbligatorio." }, { status: 401 });
     }
 
     const stripe = getStripe();

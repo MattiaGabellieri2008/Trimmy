@@ -23,8 +23,31 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const callerUid = decodedUser.uid;
     const body = await req.json().catch(() => ({}));
-    const tenantId = body.tenantId || decodedUser.uid || "tenant-default";
+    const targetTenantId = body.tenantId || callerUid;
+
+    // Verifica autorizzazione tenant: il chiamante deve essere il titolare o un membro dello staff autorizzato
+    let isAuthorized = callerUid === targetTenantId;
+    if (!isAuthorized && adminDb) {
+      try {
+        const staffDoc = await adminDb.collection("saloni").doc(targetTenantId).collection("staff").doc(callerUid).get();
+        if (staffDoc.exists && staffDoc.data()?.status !== "DISATTIVO") {
+          isAuthorized = true;
+        }
+      } catch (authErr) {
+        console.warn("[reconcile] Errore verifica staff salone:", authErr);
+      }
+    }
+
+    if (!isAuthorized) {
+      return NextResponse.json(
+        { success: false, error: "Non sei autorizzato a riconciliare o modificare i dati di questo salone." },
+        { status: 403 }
+      );
+    }
+
+    const tenantId = targetTenantId;
 
     // ─── RATE LIMITING DISTRIBUITO PER CLOUD RUN (OPT-02) ───
     const rateCheck = await checkDistributedRateLimit(tenantId, {

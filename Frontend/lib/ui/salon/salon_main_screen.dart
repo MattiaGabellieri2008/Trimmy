@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/theme/app_colors.dart';
@@ -54,16 +55,18 @@ class _SalonMainScreenState extends State<SalonMainScreen> {
           ],
         ),
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {
-          // Switch rapido per demo al ruolo Client
-          context.read<AuthRepository>().switchRole(UserRole.client);
-        },
-        backgroundColor: AppColors.obsidianBlack,
-        foregroundColor: AppColors.white,
-        icon: const Icon(Icons.person, size: 18),
-        label: const Text('Passa a Cliente', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-      ),
+      floatingActionButton: kDebugMode
+          ? FloatingActionButton.extended(
+              onPressed: () {
+                // Switch rapido per test debug al ruolo Client
+                context.read<AuthRepository>().switchRole(UserRole.client);
+              },
+              backgroundColor: AppColors.obsidianBlack,
+              foregroundColor: AppColors.white,
+              icon: const Icon(Icons.person, size: 18),
+              label: const Text('Passa a Cliente (Debug)', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+            )
+          : null,
     );
   }
 }

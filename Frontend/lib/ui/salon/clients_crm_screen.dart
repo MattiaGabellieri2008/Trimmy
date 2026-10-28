@@ -101,31 +101,38 @@ class _SalonClientsCrmScreenState extends State<SalonClientsCrmScreen> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.between,
                         children: [
-                          Row(
-                            children: [
-                              CircleAvatar(
-                                backgroundColor: AppColors.obsidianBlack,
-                                child: Text(
-                                  client['name'].toString().split(' ').map((n) => n[0]).take(2).join(),
-                                  style: const TextStyle(color: AppColors.white, fontWeight: FontWeight.bold, fontSize: 12),
+                          Expanded(
+                            child: Row(
+                              children: [
+                                CircleAvatar(
+                                  backgroundColor: AppColors.obsidianBlack,
+                                  child: Text(
+                                    client['name'].toString().split(' ').map((n) => n.isNotEmpty ? n[0] : '').take(2).join(),
+                                    style: const TextStyle(color: AppColors.white, fontWeight: FontWeight.bold, fontSize: 12),
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(width: 12),
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    client['name'].toString(),
-                                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        client['name'].toString(),
+                                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      Text(
+                                        client['phone'].toString(),
+                                        style: const TextStyle(fontSize: 11, color: AppColors.zinc500),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ],
                                   ),
-                                  Text(
-                                    client['phone'].toString(),
-                                    style: const TextStyle(fontSize: 11, color: AppColors.zinc500),
-                                  ),
-                                ],
-                              ),
-                            ],
+                                ),
+                              ],
+                            ),
                           ),
+                          const SizedBox(width: 8),
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                             decoration: BoxDecoration(

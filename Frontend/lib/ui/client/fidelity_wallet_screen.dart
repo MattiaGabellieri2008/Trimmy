@@ -428,14 +428,15 @@ class _PackageCard extends StatelessWidget {
           ),
           const SizedBox(height: 14),
 
-          // Pallini Sedute (1..N)
-          Row(
+          // Pallini Sedute (1..N) con Wrap per evitare overflow su schermi compatti o pacchetti da 10+ sedute
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
             children: List.generate(package.totalSessions, (index) {
               final isAvailable = index < package.remainingSessions;
               return Container(
                 width: 28,
                 height: 28,
-                margin: const EdgeInsets.only(right: 6),
                 decoration: BoxDecoration(
                   color: isAvailable ? AppColors.indigo : AppColors.zinc200,
                   borderRadius: BorderRadius.circular(8),

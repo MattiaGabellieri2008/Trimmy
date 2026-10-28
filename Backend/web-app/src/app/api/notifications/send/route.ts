@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { adminAuth, adminMessaging } from "@/lib/firebase-admin";
+import { adminAuth, adminMessaging, adminDb } from "@/lib/firebase-admin";
 import { checkDistributedRateLimit } from "@/lib/distributed-rate-limiter";
 
 export async function POST(req: NextRequest) {
@@ -76,12 +76,23 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // ─── 4. AUTORIZZAZIONE: Il titolare del salone può inviare qualsiasi notifica/comunicazione;
-    // un cliente autenticato può inviare SOLO la notifica di conferma del proprio appuntamento ("CONFIRMATION").
-    const isSalonOwner = callerUid === tenantId;
+    // ─── 4. AUTORIZZAZIONE: Il titolare del salone o un membro dello staff autorizzato
+    // può inviare qualsiasi notifica/comunicazione; un cliente autenticato può inviare SOLO la conferma ("CONFIRMATION").
+    let isSalonStaff = callerUid === tenantId;
+    if (!isSalonStaff && adminDb) {
+      try {
+        const staffDoc = await adminDb.collection("saloni").doc(tenantId).collection("staff").doc(callerUid).get();
+        if (staffDoc.exists && staffDoc.data()?.status !== "DISATTIVO") {
+          isSalonStaff = true;
+        }
+      } catch (staffErr) {
+        console.warn("[notifications/send] Verifica staff salone fallita:", staffErr);
+      }
+    }
+
     const isBookingConfirmation = type === "CONFIRMATION";
 
-    if (!isSalonOwner && !isBookingConfirmation) {
+    if (!isSalonStaff && !isBookingConfirmation) {
       return NextResponse.json(
         { success: false, error: "Non sei autorizzato a inviare questa tipologia di notifica per questo salone." },
         { status: 403 }

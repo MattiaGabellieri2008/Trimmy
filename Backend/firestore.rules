@@ -66,6 +66,7 @@ service cloud.firestore {
     // Controlla:
     // 1. UID chiamante == salonId (match diretto)
     // 2. Oppure esistenza del documento /saloni/{salonId} con ownerUid o userId corrispondente al chiamante
+    // 3. Oppure appartenenza attiva allo staff del salone (/saloni/{salonId}/staff/{auth.uid})
     function isSalonAuthorized(salonId) {
       return isAuthenticated() && (
         request.auth.uid == salonId ||
@@ -74,7 +75,8 @@ service cloud.firestore {
             (get(/databases/$(database)/documents/saloni/$(salonId)).data.get('ownerUid', '') == request.auth.uid) ||
             (get(/databases/$(database)/documents/saloni/$(salonId)).data.get('userId', '') == request.auth.uid)
           )
-        )
+        ) ||
+        exists(/databases/$(database)/documents/saloni/$(salonId)/staff/$(request.auth.uid))
       );
     }
 
@@ -141,7 +143,7 @@ service cloud.firestore {
       // 2. STAFF E COLLABORATORI DEL TEAM
       match /staff/{staffId} {
         allow read: if true;
-        allow write: if isSalonAuthorized(salonId);
+        allow write: if isSalonAuthorized(salonId) || (isAuthenticated() && request.auth.uid == staffId);
       }
 
       // 3. INVITI COLLABORATORI (TOKEN ONBOARDING)
@@ -291,10 +293,12 @@ service cloud.firestore {
 
     // ===============================================================
     // Invio Email Transazionali Firebase Extension (/mail/{mailId})
+    // Coda di invio trigger email: creazione permessa a utenti autenticati,
+    // lettura rigorosamente negata (allow read: if false) per prevenire leak di token e dati PII.
     // ===============================================================
     match /mail/{mailId} {
       allow create: if isAuthenticated();
-      allow read: if isAuthenticated();
+      allow read: if false;
     }
   }
 }

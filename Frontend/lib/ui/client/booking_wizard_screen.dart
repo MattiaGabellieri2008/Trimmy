@@ -416,58 +416,63 @@ class _BookingWizardScreenState extends State<BookingWizardScreen> {
     final isLastStep = _currentStep == 3;
 
     return Container(
-      padding: const EdgeInsets.all(16),
       decoration: const BoxDecoration(
         color: AppColors.white,
         border: Border(top: BorderSide(color: AppColors.zinc200)),
       ),
-      child: Row(
-        children: [
-          if (_currentStep > 0) ...[
-            OutlinedButton(
-              onPressed: () => setState(() => _currentStep--),
-              style: OutlinedButton.styleFrom(
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              ),
-              child: const Text('Indietro'),
-            ),
-            const SizedBox(width: 12),
-          ],
-          Expanded(
-            child: ElevatedButton(
-              onPressed: _isBooking
-                  ? null
-                  : () {
-                      if (_selectedService == null && _currentStep == 0) {
-                        _selectedService = context.read<SalonRepository>().services.first;
-                      }
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              if (_currentStep > 0) ...[
+                OutlinedButton(
+                  onPressed: () => setState(() => _currentStep--),
+                  style: OutlinedButton.styleFrom(
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  ),
+                  child: const Text('Indietro'),
+                ),
+                const SizedBox(width: 12),
+              ],
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: _isBooking
+                      ? null
+                      : () {
+                          if (_selectedService == null && _currentStep == 0) {
+                            _selectedService = context.read<SalonRepository>().services.first;
+                          }
 
-                      if (isLastStep) {
-                        _confirmBooking();
-                      } else {
-                        setState(() => _currentStep++);
-                      }
-                    },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.obsidianBlack,
-                foregroundColor: AppColors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                padding: const EdgeInsets.symmetric(vertical: 14),
+                          if (isLastStep) {
+                            _confirmBooking();
+                          } else {
+                            setState(() => _currentStep++);
+                          }
+                        },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.obsidianBlack,
+                    foregroundColor: AppColors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                  ),
+                  child: _isBooking
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(color: AppColors.white, strokeWidth: 2),
+                        )
+                      : Text(
+                          isLastStep ? 'Conferma e Salva Appuntamento' : 'Continua',
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                ),
               ),
-              child: _isBooking
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(color: AppColors.white, strokeWidth: 2),
-                    )
-                  : Text(
-                      isLastStep ? 'Conferma e Salva Appuntamento' : 'Continua',
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
-            ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -532,12 +537,14 @@ class _SuccessBoardingPass extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: const BoxDecoration(
-        color: AppColors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
-      ),
+    return SafeArea(
+      top: false,
+      child: Container(
+        padding: const EdgeInsets.all(24),
+        decoration: const BoxDecoration(
+          color: AppColors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+        ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -605,6 +612,7 @@ class _SuccessBoardingPass extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
+    ),
+  );
+}
 }

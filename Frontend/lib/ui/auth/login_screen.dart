@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/theme/app_colors.dart';
@@ -14,8 +15,8 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final _emailController = TextEditingController(text: 'mario.rossi@trimmy.it');
-  final _passwordController = TextEditingController(text: 'password123');
+  final _emailController = TextEditingController(text: kDebugMode ? 'mario.rossi@trimmy.it' : '');
+  final _passwordController = TextEditingController(text: kDebugMode ? 'password123' : '');
 
   @override
   Widget build(BuildContext context) {
