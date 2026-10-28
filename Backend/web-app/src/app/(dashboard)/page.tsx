@@ -516,6 +516,51 @@ export default function AgendaPage() {
     return days;
   }, [selectedDate]);
 
+  // ─── BOLLE SETTIMANALI COMPATTE & SWIPE GESTURE (TOUCH-FIRST MOBILE) ───
+  const mobileBubbleDays = useMemo(() => {
+    if (!selectedDate) return [];
+    const curr = new Date(selectedDate);
+    const day = curr.getDay();
+    const diff = curr.getDate() - day + (day === 0 ? -6 : 1); // Lunedì
+    const monday = new Date(curr.setDate(diff));
+    monday.setHours(0, 0, 0, 0);
+
+    const days: Date[] = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(monday);
+      d.setDate(monday.getDate() + i);
+      days.push(d);
+    }
+    return days;
+  }, [selectedDate]);
+
+  const [touchStartX, setTouchStartX] = useState<number | null>(null);
+  const [touchStartY, setTouchStartY] = useState<number | null>(null);
+
+  const handleCalendarTouchStart = (e: React.TouchEvent) => {
+    setTouchStartX(e.touches[0].clientX);
+    setTouchStartY(e.touches[0].clientY);
+  };
+
+  const handleCalendarTouchEnd = (e: React.TouchEvent) => {
+    if (touchStartX === null || touchStartY === null) return;
+    const touchEndX = e.changedTouches[0].clientX;
+    const touchEndY = e.changedTouches[0].clientY;
+    const diffX = touchStartX - touchEndX;
+    const diffY = touchStartY - touchEndY;
+
+    // Solo se lo swipe è prevalentemente orizzontale e supera i 60px
+    if (Math.abs(diffX) > 60 && Math.abs(diffX) > Math.abs(diffY) * 1.5) {
+      if (diffX > 0) {
+        handleNext(); // Swipe a sinistra -> Giorno successivo
+      } else {
+        handlePrev(); // Swipe a destra -> Giorno precedente
+      }
+    }
+    setTouchStartX(null);
+    setTouchStartY(null);
+  };
+
   // Creazione Nuovo Appuntamento
   const handleCreateAppointment = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1158,7 +1203,94 @@ export default function AgendaPage() {
         </div>
       </header>
 
-      {/* 2. AREA PRINCIPALE: VISUALIZZAZIONE CALENDARIO */}
+      {/* ─── STRISCIA SETTIMANALE A BOLLE (TOUCH-FIRST MOBILE & TABLET) ─── */}
+      <div className="bg-white rounded-2xl border border-zinc-200/70 p-2 sm:p-2.5 shadow-2xs mb-4">
+        <div className="flex items-center justify-between gap-1 sm:gap-2">
+          {/* Tasto Settimana Precedente */}
+          <button
+            onClick={() => {
+              const d = new Date(selectedDate);
+              d.setDate(d.getDate() - 7);
+              setSelectedDate(d);
+            }}
+            className="p-1.5 sm:p-2 text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 rounded-xl transition cursor-pointer shrink-0"
+            title="Settimana precedente"
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+
+          {/* Griglia 7 Bolle Giorno */}
+          <div className="flex-1 grid grid-cols-7 gap-1 sm:gap-1.5 py-0.5 select-none">
+            {mobileBubbleDays.map((d) => {
+              const isSelected = selectedDate.toDateString() === d.toDateString();
+              const isToday = todayDate ? todayDate.toDateString() === d.toDateString() : false;
+              const dayName = d.toLocaleDateString("it-IT", { weekday: "short" }).toUpperCase().replace(".", "");
+              const dayNum = d.getDate();
+
+              // Conta appuntamenti per questo giorno
+              const dayApptCount = appuntamenti.filter((a) => {
+                const apptD = new Date(a.startTime);
+                return apptD.toDateString() === d.toDateString();
+              }).length;
+
+              return (
+                <button
+                  key={d.toISOString()}
+                  onClick={() => setSelectedDate(d)}
+                  className={`flex flex-col items-center justify-center py-1.5 sm:py-2.5 px-0.5 sm:px-1 rounded-xl transition-all cursor-pointer relative ${
+                    isSelected
+                      ? "bg-zinc-900 text-white shadow-md ring-2 ring-zinc-900 font-bold scale-102"
+                      : "bg-zinc-50/70 hover:bg-zinc-100 text-zinc-700 border border-zinc-200/50"
+                  }`}
+                >
+                  <span className={`text-[9px] sm:text-[11px] font-semibold tracking-wider ${
+                    isSelected ? "text-zinc-300" : "text-zinc-400"
+                  }`}>
+                    {dayName}
+                  </span>
+                  <span className={`text-xs sm:text-base font-extrabold mt-0.5 ${
+                    isSelected ? "text-white" : "text-zinc-900"
+                  }`}>
+                    {dayNum}
+                  </span>
+
+                  {/* Indicatori: Appuntamenti & Badge Oggi */}
+                  <div className="flex items-center gap-1 mt-0.5 sm:mt-1">
+                    {dayApptCount > 0 && (
+                      <span className={`w-1.5 h-1.5 rounded-full ${
+                        isSelected ? "bg-amber-400" : "bg-zinc-900"
+                      }`} />
+                    )}
+                    {isToday && (
+                      <span className={`text-[8px] sm:text-[9px] font-mono font-bold uppercase px-1 rounded ${
+                        isSelected ? "bg-amber-500 text-zinc-950" : "bg-amber-100 text-amber-800"
+                      }`}>
+                        Oggi
+                      </span>
+                    )}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Tasto Settimana Successiva */}
+          <button
+            onClick={() => {
+              const d = new Date(selectedDate);
+              d.setDate(d.getDate() + 7);
+              setSelectedDate(d);
+            }}
+            className="p-1.5 sm:p-2 text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 rounded-xl transition cursor-pointer shrink-0"
+            title="Settimana successiva"
+          >
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+
+      {/* 2. AREA PRINCIPALE: VISUALIZZAZIONE CALENDARIO (CON GESTURE SWIPE TOUCH) */}
+      <div onTouchStart={handleCalendarTouchStart} onTouchEnd={handleCalendarTouchEnd}>
       {isLoading ? (
         <div className="bg-white rounded-xl border border-zinc-200/60 p-12 sm:p-16 flex flex-col items-center justify-center text-zinc-400">
           <Loader2 className="w-8 h-8 animate-spin mb-3 text-zinc-600" />
@@ -1615,27 +1747,44 @@ export default function AgendaPage() {
       ) : (
 
         /* ========================================================================= */
-        /* VISTA 4: COLONNE STAFF                                                   */
+        /* VISTA 4: COLONNE STAFF (GOOGLE CALENDAR STYLE CON SCORRIMENTO ORIZZONTALE) */
         /* ========================================================================= */
-        <div className="bg-white rounded-xl shadow-xs border border-zinc-200/60 overflow-x-auto">
-          <div className="min-w-[800px]">
-            <div className="grid border-b border-zinc-200/60 bg-zinc-50/70" style={{ gridTemplateColumns: `repeat(${activeStaff.length}, minmax(0, 1fr))` }}>
-              {activeStaff.map((st) => (
-                <div key={st.id} className="p-3 text-center border-r last:border-r-0 border-zinc-200/60">
-                  <p className="text-sm font-semibold text-zinc-900">{st.fullName}</p>
-                  <p className="text-[11px] text-zinc-400 uppercase tracking-wider">{st.role}</p>
-                </div>
-              ))}
-            </div>
+        <div className="bg-white rounded-xl shadow-xs border border-zinc-200/60 overflow-x-auto touch-pan-x scrollbar-thin">
+          <div 
+            className="flex divide-x divide-zinc-200/60" 
+            style={{ 
+              minWidth: `${Math.max(activeStaff.length * 260, 780)}px`,
+              width: "max-content"
+            }}
+          >
+            {activeStaff.map((st) => {
+              const staffAppointments = appuntamenti.filter((a) => a.staff.id === st.id);
+              const isStaffHovered = dragOverSlot?.type === "staff" && dragOverSlot?.staffId === st.id;
+              const initials = st.fullName.split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2);
 
-            <div className="grid min-h-[500px] divide-x divide-zinc-100" style={{ gridTemplateColumns: `repeat(${activeStaff.length}, minmax(0, 1fr))` }}>
-              {activeStaff.map((st) => {
-                const staffAppointments = appuntamenti.filter((a) => a.staff.id === st.id);
-                const isStaffHovered = dragOverSlot?.type === "staff" && dragOverSlot?.staffId === st.id;
+              return (
+                <div 
+                  key={st.id} 
+                  className="w-[260px] sm:w-[300px] flex flex-col bg-zinc-50/20"
+                >
+                  {/* Sticky Staff Header con Avatar, Ruolo e Badge contatore */}
+                  <div className="sticky top-0 z-10 p-3 bg-zinc-50/95 backdrop-blur-xs border-b border-zinc-200/60 flex items-center justify-between shadow-2xs">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-8 h-8 rounded-full bg-zinc-900 text-amber-400 font-bold text-xs flex items-center justify-center shrink-0 shadow-2xs">
+                        {initials}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs sm:text-sm font-bold text-zinc-900 truncate">{st.fullName}</p>
+                        <p className="text-[10px] text-zinc-400 uppercase tracking-wider truncate">{st.role}</p>
+                      </div>
+                    </div>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-zinc-200/80 text-zinc-700 font-mono shrink-0">
+                      {staffAppointments.length} appt
+                    </span>
+                  </div>
 
-                return (
+                  {/* Body Colonna Staff */}
                   <div 
-                    key={st.id} 
                     onDragOver={(e) => {
                       e.preventDefault();
                       e.dataTransfer.dropEffect = "move";
@@ -1651,8 +1800,8 @@ export default function AgendaPage() {
                       e.preventDefault();
                       handleDropOnStaff(st.id, st.fullName, st.role);
                     }}
-                    className={`p-3 space-y-3 transition-all ${
-                      isStaffHovered ? "bg-emerald-50/70 ring-2 ring-emerald-500/50 rounded-xl border-emerald-400" : "bg-zinc-50/10"
+                    className={`p-3 space-y-3 flex-1 min-h-[500px] transition-all ${
+                      isStaffHovered ? "bg-emerald-50/70 ring-2 ring-emerald-500/50 rounded-b-xl border-emerald-400" : ""
                     }`}
                   >
                     {isStaffHovered && draggingAppt && (
@@ -1745,12 +1894,13 @@ export default function AgendaPage() {
                       </p>
                     )}
                   </div>
-                );
-              })}
-            </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
+      </div>
 
       {/* ─── FLOATING ACTION TOAST CON UNDO & PROMPT NOTIFICHE ─── */}
       {actionToast && (
@@ -1825,17 +1975,25 @@ export default function AgendaPage() {
         </div>
       )}
 
-      {/* 3. MODALE DETTAGLI & GESTIONE STATO APPUNTAMENTO */}
+      {/* 3. MODALE DETTAGLI & GESTIONE STATO APPUNTAMENTO (BOTTOM SHEET MOBILE / MODALE DESKTOP) */}
       {selectedAppt && (
         <div 
-          className="fixed inset-0 bg-zinc-900/30 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-in fade-in duration-200"
+          className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-200"
           onClick={() => setSelectedAppt(null)}
         >
           <div 
-            className="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-zinc-200 overflow-hidden"
+            className="bg-white rounded-t-3xl sm:rounded-2xl max-w-md w-full shadow-2xl border-t sm:border border-zinc-200 overflow-hidden max-h-[92vh] sm:max-h-[85vh] flex flex-col animate-in slide-in-from-bottom duration-250 sm:slide-in-from-bottom-0 sm:zoom-in-95"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex justify-between items-start p-6 border-b border-zinc-100">
+            {/* Maniglia Touch per Swipe-down su Smartphone */}
+            <div 
+              className="sm:hidden pt-3 pb-1 flex justify-center cursor-pointer"
+              onClick={() => setSelectedAppt(null)}
+            >
+              <div className="w-12 h-1.5 bg-zinc-300 hover:bg-zinc-400 rounded-full transition-colors" />
+            </div>
+
+            <div className="flex justify-between items-start px-6 py-4 sm:p-6 border-b border-zinc-100">
               <div>
                 <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">
                   Dettaglio Appuntamento
@@ -1846,13 +2004,13 @@ export default function AgendaPage() {
               </div>
               <button 
                 onClick={() => setSelectedAppt(null)}
-                className="p-1 rounded-md text-zinc-400 hover:text-zinc-900 hover:bg-zinc-100 transition-colors"
+                className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-900 hover:bg-zinc-100 transition-colors"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="p-6 space-y-4">
+            <div className="p-6 space-y-4 overflow-y-auto flex-1">
               {/* Box Cliente & Staff */}
               <div className="grid grid-cols-2 gap-3 bg-zinc-50 p-3.5 rounded-xl border border-zinc-100 text-xs">
                 <div>
@@ -1910,7 +2068,7 @@ export default function AgendaPage() {
                   setSelectedAppt(null);
                   setIsCheckoutOpen(true);
                 }}
-                className="w-full py-2.5 px-4 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-zinc-950 font-bold rounded-xl text-xs flex items-center justify-center gap-2 shadow-md shadow-amber-500/20 transition cursor-pointer"
+                className="w-full py-3.5 sm:py-2.5 px-4 min-h-[48px] bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-zinc-950 font-bold rounded-xl text-xs flex items-center justify-center gap-2 shadow-md shadow-amber-500/20 active:scale-98 transition cursor-pointer"
               >
                 <Receipt className="w-4 h-4" />
                 Incassa al Banco / Scontrino POS 💳
@@ -1918,7 +2076,7 @@ export default function AgendaPage() {
 
               {/* Contatto Rapido Notifica Push Firebase & Telefono */}
               {selectedAppt.customer?.phone && (
-                <div className="p-3 bg-zinc-50 border border-zinc-200/80 rounded-xl space-y-2">
+                <div className="p-3.5 bg-zinc-50 border border-zinc-200/80 rounded-xl space-y-2.5">
                   <div className="flex items-center justify-between">
                     <span className="text-[11px] font-semibold text-zinc-700 uppercase tracking-wider flex items-center gap-1.5">
                       <MessageSquare className="w-3.5 h-3.5 text-indigo-600" />
@@ -1948,16 +2106,16 @@ export default function AgendaPage() {
                           alert("Impossibile inviare notifica: " + (err.message || "Errore"));
                         }
                       }}
-                      className="flex-1 py-1.5 px-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shadow-2xs cursor-pointer"
+                      className="flex-1 py-3 sm:py-1.5 px-3 min-h-[48px] sm:min-h-auto bg-indigo-600 hover:bg-indigo-700 active:scale-98 text-white rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition shadow-2xs cursor-pointer"
                     >
-                      <MessageSquare className="w-3.5 h-3.5" />
+                      <MessageSquare className="w-4 h-4" />
                       Invia Push FCM 🔔
                     </button>
                     <a
                       href={`tel:${selectedAppt.customer.phone}`}
-                      className="py-1.5 px-3 bg-white border border-zinc-200 text-zinc-700 hover:bg-zinc-100 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                      className="py-3 sm:py-1.5 px-4 min-h-[48px] sm:min-h-auto bg-white border border-zinc-200 text-zinc-700 hover:bg-zinc-100 active:scale-98 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer"
                     >
-                      <Phone className="w-3.5 h-3.5" />
+                      <Phone className="w-4 h-4" />
                       Chiama
                     </a>
                   </div>
@@ -1971,7 +2129,7 @@ export default function AgendaPage() {
                   <button
                     disabled={actionLoading}
                     onClick={() => handleUpdateStatus(selectedAppt.id, "CONFIRMED")}
-                    className={`py-2 px-3 rounded-lg text-xs font-medium border text-center transition-all ${
+                    className={`py-3 sm:py-2 px-3 min-h-[48px] sm:min-h-auto rounded-xl text-xs font-semibold border text-center transition-all active:scale-98 ${
                       selectedAppt.status === "CONFIRMED"
                         ? "bg-zinc-900 text-white border-zinc-900 shadow-xs"
                         : "bg-white text-zinc-700 border-zinc-200 hover:bg-zinc-50"
@@ -1982,7 +2140,7 @@ export default function AgendaPage() {
                   <button
                     disabled={actionLoading}
                     onClick={() => handleUpdateStatus(selectedAppt.id, "COMPLETED")}
-                    className={`py-2 px-3 rounded-lg text-xs font-medium border text-center transition-all ${
+                    className={`py-3 sm:py-2 px-3 min-h-[48px] sm:min-h-auto rounded-xl text-xs font-semibold border text-center transition-all active:scale-98 ${
                       selectedAppt.status === "COMPLETED"
                         ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
                         : "bg-white text-emerald-700 border-emerald-200 hover:bg-emerald-50"
@@ -1993,7 +2151,7 @@ export default function AgendaPage() {
                   <button
                     disabled={actionLoading}
                     onClick={() => handleUpdateStatus(selectedAppt.id, "CANCELLED")}
-                    className={`py-2 px-3 rounded-lg text-xs font-medium border text-center transition-all ${
+                    className={`py-3 sm:py-2 px-3 min-h-[48px] sm:min-h-auto rounded-xl text-xs font-semibold border text-center transition-all active:scale-98 ${
                       selectedAppt.status === "CANCELLED"
                         ? "bg-red-600 text-white border-red-600 shadow-xs"
                         : "bg-white text-red-600 border-red-200 hover:bg-red-50"
@@ -2006,11 +2164,11 @@ export default function AgendaPage() {
             </div>
 
             {/* Footer con opzione Elimina */}
-            <div className="p-6 bg-zinc-50/50 border-t border-zinc-100 flex justify-between items-center">
+            <div className="p-4 sm:p-6 bg-zinc-50 border-t border-zinc-100 flex justify-between items-center">
               <button
                 disabled={actionLoading}
                 onClick={() => handleDeleteAppointment(selectedAppt.id)}
-                className="flex items-center gap-1.5 text-xs text-red-600 hover:text-red-700 font-medium transition-colors"
+                className="flex items-center gap-1.5 text-xs text-red-600 hover:text-red-700 font-semibold p-2 transition-colors min-h-[44px]"
               >
                 <Trash2 className="w-4 h-4" />
                 Elimina Definitivamente
@@ -2018,7 +2176,7 @@ export default function AgendaPage() {
 
               <button
                 onClick={() => setSelectedAppt(null)}
-                className="px-4 py-2 bg-white border border-zinc-200 rounded-lg text-xs font-semibold text-zinc-700 hover:bg-zinc-50 shadow-xs"
+                className="px-5 py-2.5 sm:px-4 sm:py-2 bg-white border border-zinc-200 rounded-xl text-xs font-bold text-zinc-800 hover:bg-zinc-100 active:scale-98 shadow-xs min-h-[44px] sm:min-h-auto flex items-center justify-center"
               >
                 Chiudi
               </button>
@@ -2346,6 +2504,18 @@ export default function AgendaPage() {
         tenantId={salonTenantId || currentUser?.uid || "tenant-default"}
         salonName={salonNameState}
       />
+
+      {/* 7. FLOATING ACTION BUTTON (FAB) PER SMARTPHONE */}
+      <button
+        onClick={() => {
+          setFormDate(selectedDate.toISOString().split("T")[0]);
+          setIsDrawerOpen(true);
+        }}
+        className="sm:hidden fixed bottom-6 right-5 z-40 w-14 h-14 rounded-full bg-zinc-900 text-white shadow-2xl flex items-center justify-center hover:bg-zinc-800 active:scale-90 transition-all cursor-pointer border-2 border-white/20"
+        title="Nuova Prenotazione"
+      >
+        <Plus className="w-6 h-6" />
+      </button>
 
     </div>
   );
