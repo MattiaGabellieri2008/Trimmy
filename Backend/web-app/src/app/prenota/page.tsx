@@ -48,6 +48,14 @@ import {
   getLocalDateString 
 } from "@/lib/appointments-service";
 import { getSalonTenantId } from "@/lib/tenant-helper";
+import { 
+  DaySchedule, 
+  fetchSalonWorkingHours, 
+  generateAvailableBookingDays, 
+  filterTimeSlotsByWorkingHours, 
+  getSalonScheduleForDate,
+  BookingDayOption
+} from "@/lib/working-hours-store";
 
 function PrenotaContent() {
   const router = useRouter();
@@ -67,7 +75,8 @@ function PrenotaContent() {
   const [selectedTimeSlot, setSelectedTimeSlot] = useState("10:30");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [confirmedAppt, setConfirmedAppt] = useState<ClientAppointmentItem | null>(null);
-  const [availableDays, setAvailableDays] = useState<{ dateStr: string; dayName: string; dayNumber: number; monthName: string; isToday: boolean }[]>([]);
+  const [availableDays, setAvailableDays] = useState<BookingDayOption[]>([]);
+  const [salonWorkingHours, setSalonWorkingHours] = useState<DaySchedule[]>([]);
   const [salonStaffList, setSalonStaffList] = useState<any[]>([]);
   const [occupiedSlots, setOccupiedSlots] = useState<{ startTime: string; endTime: string }[]>([]);
   const [isLoadingSlots, setIsLoadingSlots] = useState(false);
@@ -83,6 +92,7 @@ function PrenotaContent() {
   // Carica i dati reali del salone da Cloud Firestore (o fallback su INITIAL_SALONS)
   useEffect(() => {
     if (!saloneId) return;
+    const tid = getSalonTenantId(saloneId);
     fetchSalonById(saloneId).then((found) => {
       if (found) {
         setSalon(found);
@@ -95,6 +105,12 @@ function PrenotaContent() {
     fetchSalonStaff(saloneId).then((staff) => {
       if (staff && staff.length > 0) {
         setSalonStaffList(staff);
+      }
+    }).catch(() => {});
+
+    fetchSalonWorkingHours(tid).then((hours) => {
+      if (hours && hours.length > 0) {
+        setSalonWorkingHours(hours);
       }
     }).catch(() => {});
   }, [saloneId]);
@@ -152,26 +168,23 @@ function PrenotaContent() {
       }
     });
 
-    const now = new Date();
-    setSelectedDate(getLocalDateString(now));
-
-    const days = [];
-    for (let i = 0; i < 14; i++) {
-      const d = new Date(now);
-      d.setDate(d.getDate() + i);
-      if (d.getDay() === 0) continue;
-      days.push({
-        dateStr: getLocalDateString(d),
-        dayName: d.toLocaleDateString("it-IT", { weekday: "short" }),
-        dayNumber: d.getDate(),
-        monthName: d.toLocaleDateString("it-IT", { month: "short" }),
-        isToday: i === 0
-      });
-    }
-    setAvailableDays(days);
-
     return () => unsub();
   }, []);
+
+  // Generazione dinamica giorni con orari di apertura del salone
+  useEffect(() => {
+    const days = generateAvailableBookingDays(
+      new Date(),
+      14,
+      salonWorkingHours.length > 0 ? salonWorkingHours : undefined
+    );
+    setAvailableDays(days);
+
+    const firstOpenDay = days.find((d) => d.isOpen) || days[0];
+    if (firstOpenDay) {
+      setSelectedDate(firstOpenDay.dateStr);
+    }
+  }, [salonWorkingHours]);
 
   const activeService = useMemo(() => {
     return servicesList.find((s) => String(s.id) === String(selectedServiceId)) || servicesList[0];
@@ -184,12 +197,33 @@ function PrenotaContent() {
     return staffList.find((st) => String(st.id) === String(selectedStaffId)) || staffList[0];
   }, [selectedStaffId, staffList, salon.name]);
 
+  // Orari del salone per la data selezionata (apertura, chiusura e pausa)
+  const daySchedule = useMemo(() => {
+    if (!selectedDate) return undefined;
+    const tid = getSalonTenantId(salon.id);
+    return getSalonScheduleForDate(
+      tid,
+      selectedDate,
+      salonWorkingHours.length > 0 ? salonWorkingHours : undefined
+    );
+  }, [salon.id, selectedDate, salonWorkingHours]);
+
+  // Griglia oraria unica e compatta filtrata dagli orari reali del salone (e pause)
   const timeSlots = useMemo(() => {
-    return [
-      "08:30", "09:00", "09:30", "10:00", "10:30", "11:00", "11:30", "12:00", "12:30",
-      "14:00", "14:30", "15:00", "15:30", "16:00", "16:30", "17:00", "17:30", "18:00", "18:30", "19:00"
+    const baseSlots = [
+      "08:00", "08:30", "09:00", "09:30", "10:00", "10:30", "11:00", "11:30",
+      "12:00", "12:30", "13:00", "13:30", "14:00", "14:30", "15:00", "15:30",
+      "16:00", "16:30", "17:00", "17:30", "18:00", "18:30", "19:00", "19:30", "20:00"
     ];
-  }, []);
+    if (!daySchedule) return baseSlots;
+    return filterTimeSlotsByWorkingHours(baseSlots, daySchedule);
+  }, [daySchedule]);
+
+  useEffect(() => {
+    if (timeSlots.length > 0 && !timeSlots.includes(selectedTimeSlot)) {
+      setSelectedTimeSlot(timeSlots[0]);
+    }
+  }, [timeSlots, selectedTimeSlot]);
 
   // Controllo slot occupati in tempo reale da Cloud Firestore
   useEffect(() => {
@@ -651,73 +685,138 @@ function PrenotaContent() {
                   <div className="flex gap-2.5 overflow-x-auto pb-2 scrollbar-thin">
                     {availableDays.map((d) => {
                       const isSelected = selectedDate === d.dateStr;
+                      const isClosed = !d.isOpen;
                       return (
                         <button
                           key={d.dateStr}
+                          disabled={isClosed}
                           onClick={() => {
+                            if (isClosed) return;
                             setSelectedDate(d.dateStr);
                             setConflictError(null);
                           }}
+                          title={isClosed ? `Salone chiuso (${d.dayName})` : `Seleziona ${d.dayName} ${d.dayNumber}`}
                           className={`flex flex-col items-center justify-center min-w-[74px] py-3.5 px-2 rounded-2xl border transition-all text-center ${
-                            isSelected
-                              ? "bg-zinc-900 text-white border-zinc-900 shadow-md font-bold scale-[1.02]"
-                              : "bg-white text-zinc-700 border-zinc-200/80 hover:border-zinc-300 hover:bg-zinc-50"
-                          }`}
-                        >
-                          <span className={`text-[10px] uppercase font-bold tracking-wider ${isSelected ? "text-zinc-300" : "text-zinc-500"}`}>{d.dayName}</span>
-                          <span className="text-lg font-black my-0.5 tracking-tight">{d.dayNumber}</span>
-                          <span className={`text-[10px] font-semibold ${isSelected ? "text-zinc-300" : "text-zinc-500"}`}>{d.isToday ? "Oggi" : d.monthName}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Selezione Orari (Griglia Unica e Compatta) */}
-                <div>
-                  <div className="flex items-center justify-between mb-3">
-                    <label className="text-xs font-bold text-zinc-700 uppercase tracking-wider block">
-                      2. Scegli l&apos;orario ({activeService.durationMinutes} min)
-                    </label>
-                    <span className="text-[11px] text-emerald-700 font-semibold bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
-                      {isLoadingSlots ? "Verifica slot..." : "Slot live anti-conflitto"}
-                    </span>
-                  </div>
-                  
-                  <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-7 gap-2">
-                    {timeSlots.map((time) => {
-                      const isSelected = selectedTimeSlot === time;
-                      const isOccupied = isSlotOccupied(time);
-
-                      return (
-                        <button
-                          key={time}
-                          disabled={isOccupied}
-                          onClick={() => {
-                            setSelectedTimeSlot(time);
-                            setConflictError(null);
-                          }}
-                          className={`py-2 px-1 text-center rounded-xl text-xs font-bold border transition-all flex flex-col items-center justify-center min-h-[44px] ${
-                            isOccupied
-                              ? "bg-zinc-100/70 text-zinc-400 border-zinc-200/60 opacity-45 cursor-not-allowed line-through"
+                            isClosed
+                              ? "opacity-40 line-through bg-zinc-100 text-zinc-400 border-zinc-200 cursor-not-allowed"
                               : isSelected
-                              ? "bg-zinc-900 text-white border-zinc-900 shadow-sm ring-2 ring-zinc-900/10 scale-105"
-                              : "bg-zinc-50 text-zinc-700 border-zinc-200/70 hover:border-zinc-300 hover:bg-white hover:text-zinc-900"
+                              ? "bg-zinc-900 text-white border-zinc-900 shadow-md font-bold scale-[1.02] cursor-pointer"
+                              : "bg-white text-zinc-700 border-zinc-200/80 hover:border-zinc-300 hover:bg-zinc-50 cursor-pointer"
                           }`}
-                          title={isOccupied ? "Orario già occupato" : `Prenota alle ${time}`}
                         >
-                          <span>{time}</span>
-                          {isOccupied && (
-                            <span className="text-[8px] font-semibold no-underline text-rose-500/80 -mt-0.5">
-                              Occupato
-                            </span>
-                          )}
+                          <span className={`text-[10px] uppercase font-bold tracking-wider ${
+                            isClosed ? "text-zinc-400" : isSelected ? "text-zinc-300" : "text-zinc-500"
+                          }`}>
+                            {d.dayName}
+                          </span>
+                          <span className="text-lg font-black my-0.5 tracking-tight">{d.dayNumber}</span>
+                          <span className={`text-[10px] font-semibold ${
+                            isClosed ? "text-zinc-400 font-normal" : isSelected ? "text-zinc-300" : "text-zinc-500"
+                          }`}>
+                            {isClosed ? "Chiuso" : d.isToday ? "Oggi" : d.monthName}
+                          </span>
                         </button>
                       );
                     })}
                   </div>
                 </div>
+
+                {/* Se il giorno selezionato è chiuso dal salone */}
+                {daySchedule && !daySchedule.isOpen ? (
+                  <div className="p-6 bg-zinc-50 rounded-2xl border border-zinc-200 text-center space-y-2">
+                    <div className="w-10 h-10 rounded-full bg-zinc-200 text-zinc-600 flex items-center justify-center mx-auto text-base">
+                      🔒
+                    </div>
+                    <h4 className="text-sm font-bold text-zinc-800">Salone Chiuso di {daySchedule.dayName}</h4>
+                    <p className="text-xs text-zinc-500 max-w-sm mx-auto">
+                      Il salone non accetta appuntamenti in questo giorno della settimana. Seleziona un&apos;altra data dal calendario in alto.
+                    </p>
+                  </div>
+                ) : (
+                  /* Selezione Orari (Griglia Unica e Compatta) */
+                  <div>
+                    <div className="flex items-center justify-between mb-3">
+                      <div>
+                        <label className="text-xs font-bold text-zinc-700 uppercase tracking-wider block">
+                          2. Scegli l&apos;orario ({activeService.durationMinutes} min)
+                        </label>
+                        {daySchedule?.openTime && daySchedule?.closeTime && (
+                          <span className="text-[10px] text-zinc-400">
+                            Orario salone: {daySchedule.openTime} - {daySchedule.closeTime}
+                            {daySchedule.hasBreak && daySchedule.breakStart && daySchedule.breakEnd ? ` (pausa ${daySchedule.breakStart}-${daySchedule.breakEnd})` : ""}
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-[11px] text-emerald-700 font-semibold bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1.5 shrink-0">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
+                        {isLoadingSlots ? "Verifica slot..." : "Slot live anti-conflitto"}
+                      </span>
+                    </div>
+                    
+                    {timeSlots.length === 0 ? (
+                      <div className="p-4 bg-zinc-50 border border-zinc-200 rounded-xl text-center text-xs text-zinc-500">
+                        Nessuno slot disponibile per questo giorno negli orari di apertura del salone.
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-7 gap-2">
+                        {timeSlots.map((time) => {
+                          const isSelected = selectedTimeSlot === time;
+                          const isOccupied = isSlotOccupied(time);
+
+                          return (
+                            <button
+                              key={time}
+                              disabled={isOccupied}
+                              onClick={() => {
+                                setSelectedTimeSlot(time);
+                                setConflictError(null);
+                              }}
+                              className={`py-2 px-1 text-center rounded-xl text-xs font-bold border transition-all flex flex-col items-center justify-center min-h-[44px] ${
+                                isOccupied
+                                  ? "bg-zinc-100/70 text-zinc-400 border-zinc-200/60 opacity-45 cursor-not-allowed line-through"
+                                  : isSelected
+                                  ? "bg-zinc-900 text-white border-zinc-900 shadow-sm ring-2 ring-zinc-900/10 scale-105"
+                                  : "bg-zinc-50 text-zinc-700 border-zinc-200/70 hover:border-zinc-300 hover:bg-white hover:text-zinc-900 cursor-pointer"
+                              }`}
+                              title={isOccupied ? "Orario già occupato o pausa" : `Prenota alle ${time}`}
+                            >
+                              <span>{time}</span>
+                              {isOccupied && (
+                                <span className="text-[8px] font-semibold no-underline text-rose-500/80 -mt-0.5">
+                                  Occupato
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {/* Suggerimento Operatore Alternativo */}
+                    {timeSlots.length > 0 && timeSlots.every((s) => isSlotOccupied(s)) && selectedStaffId !== "any" && (
+                      <div className="mt-3 p-3.5 bg-amber-50/90 border border-amber-200 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-amber-900 text-xs">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <Sparkles className="w-4 h-4 text-amber-600 shrink-0" />
+                          <div>
+                            <p className="font-semibold text-amber-950">
+                              Tutti gli orari sono occupati per {activeStaff.fullName} in questa data.
+                            </p>
+                            <p className="text-[11px] text-amber-800">
+                              Puoi verificare se altri operatori del salone hanno slot disponibili subito.
+                            </p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedStaffId("any")}
+                          className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl shrink-0 transition self-end sm:self-auto shadow-xs"
+                        >
+                          Cerca con tutti gli stylist
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 

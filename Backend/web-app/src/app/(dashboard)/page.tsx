@@ -60,7 +60,9 @@ import {
   Sparkles, 
   AlertTriangle,
   Receipt,
-  Lock
+  Lock,
+  Coffee,
+  Pause
 } from "lucide-react";
 
 const TIME_SLOTS = [
@@ -93,6 +95,7 @@ export default function AgendaPage() {
 
   // Drawer & Modali
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [drawerMode, setDrawerMode] = useState<"APPOINTMENT" | "BLOCK">("APPOINTMENT");
   const [selectedAppt, setSelectedAppt] = useState<GetDailyAppointmentsData["appointments"][0] | null>(null);
 
   // Form Nuovo Appuntamento
@@ -112,6 +115,15 @@ export default function AgendaPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [salonNameState, setSalonNameState] = useState<string>("Salone");
+
+  // Form Blocco Orario (Pausa / Ferie / Permesso)
+  const [blockStaffId, setBlockStaffId] = useState("");
+  const [blockReason, setBlockReason] = useState("Pausa Pranzo");
+  const [blockDate, setBlockDate] = useState("");
+  const [blockIsAllDay, setBlockIsAllDay] = useState(false);
+  const [blockStartTime, setBlockStartTime] = useState("13:00");
+  const [blockDurationMinutes, setBlockDurationMinutes] = useState(60);
+  const [blockNotes, setBlockNotes] = useState("");
 
   // ─── POS & CHIUSURA CASSA STATE ───
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
@@ -702,6 +714,87 @@ export default function AgendaPage() {
     }
   };
 
+  // Creazione Blocco Orario (Pausa Pranzo / Ferie / Permesso)
+  const handleCreateBlock = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!blockStaffId || !blockDate) {
+      alert("Seleziona collaboratore e data per il blocco orario!");
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const tid = salonTenantId || getSalonTenantId(auth.currentUser?.uid);
+      if (!tid) throw new Error("ID salone non trovato");
+
+      const staffObj = activeStaff.find((s) => s.id === blockStaffId);
+      const staffName = staffObj ? staffObj.fullName : "Staff";
+
+      const start = parseDateSafe(blockDate);
+      let duration = blockDurationMinutes;
+
+      if (blockIsAllDay) {
+        start.setHours(8, 30, 0, 0);
+        duration = 690; // 11h 30m (dalle 08:30 alle 20:00)
+      } else {
+        const [h, m] = blockStartTime.split(":").map(Number);
+        start.setHours(h, m, 0, 0);
+      }
+
+      const end = new Date(start.getTime() + duration * 60 * 1000);
+      const blockId = `block-${Date.now()}`;
+      const blockTitle = `⏸️ ${blockReason}`;
+
+      await saveSalonAppointment({
+        id: blockId,
+        tenantId: tid,
+        salonRawId: currentUser?.uid || tid,
+        salonName: salonNameState || "Salone",
+        customerId: "cust-staff-block",
+        customer: {
+          id: "cust-staff-block",
+          firstName: "Blocco",
+          lastName: blockReason,
+          phone: ""
+        },
+        serviceId: "srv-block",
+        service: {
+          id: "srv-block",
+          name: blockTitle,
+          durationMinutes: duration,
+          price: 0
+        },
+        staffId: blockStaffId,
+        staff: {
+          id: blockStaffId,
+          fullName: staffName
+        },
+        startTime: start.toISOString(),
+        endTime: end.toISOString(),
+        status: "CONFIRMED",
+        createdAt: new Date().toISOString(),
+        price: 0,
+        notes: blockNotes || `Blocco orario: ${blockReason}`
+      });
+
+      setIsDrawerOpen(false);
+      setBlockNotes("");
+      await fetchAppuntamenti();
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("trimmy-data-updated"));
+      }
+    } catch (err: any) {
+      console.error("Errore salvataggio blocco:", err);
+      if (err?.code === "SLOT_CONFLICT" || err?.message?.includes("occupato")) {
+        alert("⚠️ Conflitto Concorrenza: " + err.message);
+      } else {
+        alert("Impossibile salvare il blocco orario: " + (err?.message || "Errore imprevisto."));
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   // Aggiornamento Stato Appuntamento
   const handleUpdateStatus = async (apptId: string, newStatus: string) => {
     setActionLoading(true);
@@ -1161,13 +1254,32 @@ export default function AgendaPage() {
           {/* Nuovo Appuntamento */}
           <button 
             onClick={() => {
-              setFormDate(selectedDate.toISOString().split("T")[0]);
+              setFormDate(selectedDate ? selectedDate.toISOString().split("T")[0] : new Date().toISOString().split("T")[0]);
+              setDrawerMode("APPOINTMENT");
               setIsDrawerOpen(true);
             }}
-            className="flex items-center gap-1.5 sm:gap-2 bg-zinc-900 text-white px-3 sm:px-3.5 py-1.5 sm:py-2 rounded-lg text-xs font-semibold hover:bg-zinc-800 transition-colors shadow-xs"
+            className="flex items-center gap-1.5 sm:gap-2 bg-zinc-900 text-white px-3 sm:px-3.5 py-1.5 sm:py-2 rounded-lg text-xs font-semibold hover:bg-zinc-800 transition-colors shadow-xs cursor-pointer"
           >
             <Plus className="w-4 h-4" />
             Prenota
+          </button>
+
+          {/* Blocca Orario (Pausa / Ferie / Permesso) */}
+          <button 
+            onClick={() => {
+              const dStr = selectedDate ? selectedDate.toISOString().split("T")[0] : new Date().toISOString().split("T")[0];
+              setBlockDate(dStr);
+              if (activeStaff.length > 0 && !blockStaffId) {
+                setBlockStaffId(activeStaff[0].id);
+              }
+              setDrawerMode("BLOCK");
+              setIsDrawerOpen(true);
+            }}
+            className="flex items-center gap-1.5 sm:gap-2 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300/80 px-3 sm:px-3.5 py-1.5 sm:py-2 rounded-lg text-xs font-bold transition-all shadow-2xs cursor-pointer"
+            title="Blocca orario per pausa pranzo, ferie o permessi staff"
+          >
+            <Coffee className="w-4 h-4 text-amber-700" />
+            <span className="hidden sm:inline">Pausa /</span> Ferie
           </button>
 
           {/* Punto Cassa POS Rapido */}
@@ -1377,6 +1489,7 @@ export default function AgendaPage() {
                       const isBeingDragged = draggingAppt?.id === appt.id;
                       const isResizingThis = resizingAppt?.appt.id === appt.id;
                       const displayDuration = isResizingThis ? resizingAppt.currentDuration : appt.service.durationMinutes;
+                      const isBlock = appt.service.id === "srv-block" || appt.service.name?.startsWith("⏸️") || appt.customer.id === "cust-staff-block";
 
                       return (
                         <div 
@@ -1395,6 +1508,8 @@ export default function AgendaPage() {
                           className={`group/card select-none w-full sm:w-auto sm:min-w-[240px] sm:max-w-[340px] border rounded-xl p-3 shadow-xs hover:shadow-md transition-all cursor-pointer text-left relative overflow-hidden ${
                             isBeingDragged
                               ? "opacity-30 scale-95 ring-2 ring-zinc-500 border-dashed"
+                              : isBlock
+                              ? "bg-amber-50/80 border-dashed border-amber-300 text-amber-950 hover:border-amber-400"
                               : isCompleted 
                               ? "bg-zinc-50 border-zinc-200 opacity-75"
                               : isCancelled
@@ -1403,7 +1518,7 @@ export default function AgendaPage() {
                           }`}
                         >
                           <div className={`absolute top-0 left-0 bottom-0 w-1 ${
-                            isCompleted ? "bg-emerald-500" : isCancelled ? "bg-red-400" : "bg-zinc-900"
+                            isBlock ? "bg-amber-500" : isCompleted ? "bg-emerald-500" : isCancelled ? "bg-red-400" : "bg-zinc-900"
                           }`} />
 
                           {/* Badge durata dinamica durante il resize */}
@@ -1424,16 +1539,32 @@ export default function AgendaPage() {
                                   <GripVertical className="w-3.5 h-3.5" />
                                 </span>
                               )}
-                              <div className="min-w-0 flex-1">
-                                <p className="text-[13px] font-semibold text-zinc-900 leading-tight truncate">
-                                  {appt.service.name}
-                                </p>
-                                <p className="text-[12px] font-medium text-zinc-600 mt-0.5 truncate">
-                                  {appt.customer.firstName} {appt.customer.lastName}
-                                </p>
-                              </div>
+                              {isBlock ? (
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center gap-1.5">
+                                    <Coffee className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                                    <p className="text-[13px] font-bold text-amber-950 leading-tight truncate">
+                                      {appt.service.name}
+                                    </p>
+                                  </div>
+                                  <p className="text-[11px] font-medium text-amber-700 mt-0.5 truncate">
+                                    Indisponibilità / Blocco
+                                  </p>
+                                </div>
+                              ) : (
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-[13px] font-semibold text-zinc-900 leading-tight truncate">
+                                    {appt.service.name}
+                                  </p>
+                                  <p className="text-[12px] font-medium text-zinc-600 mt-0.5 truncate">
+                                    {appt.customer.firstName} {appt.customer.lastName}
+                                  </p>
+                                </div>
+                              )}
                             </div>
-                            <span className="text-[10px] font-semibold text-zinc-500 bg-zinc-100 px-1.5 py-0.5 rounded shrink-0">
+                            <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded shrink-0 ${
+                              isBlock ? "bg-amber-100 text-amber-800" : "text-zinc-500 bg-zinc-100"
+                            }`}>
                               {startTimeStr} - {endTimeStr}
                             </span>
                           </div>
@@ -1444,13 +1575,15 @@ export default function AgendaPage() {
                               <span className="truncate">{appt.staff.fullName}</span>
                             </span>
                             <span className={`text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.2 rounded shrink-0 ${
-                              isCompleted 
+                              isBlock
+                                ? "text-amber-800 bg-amber-100/90 border border-amber-200"
+                                : isCompleted 
                                 ? "text-emerald-700 bg-emerald-50" 
                                 : isCancelled 
                                 ? "text-red-700 bg-red-50" 
                                 : "text-zinc-700 bg-zinc-100"
                             }`}>
-                              {appt.status}
+                              {isBlock ? "BLOCCO STAFF" : appt.status}
                             </span>
                           </div>
 
@@ -1573,6 +1706,7 @@ export default function AgendaPage() {
                     const isBeingDragged = draggingAppt?.id === appt.id;
                     const isResizingThis = resizingAppt?.appt.id === appt.id;
                     const displayDuration = isResizingThis ? resizingAppt.currentDuration : appt.service.durationMinutes;
+                    const isBlock = appt.service.id === "srv-block" || appt.service.name?.startsWith("⏸️") || appt.customer.id === "cust-staff-block";
 
                     return (
                       <div
@@ -1591,6 +1725,8 @@ export default function AgendaPage() {
                         className={`group/card select-none relative p-2.5 rounded-lg border text-left shadow-xs hover:shadow-md transition-all cursor-pointer overflow-hidden ${
                           isBeingDragged
                             ? "opacity-30 scale-95 ring-2 ring-zinc-500 border-dashed"
+                            : isBlock
+                            ? "bg-amber-50/80 border-dashed border-amber-300 text-amber-950 hover:border-amber-400"
                             : isCompleted 
                             ? "bg-zinc-50 border-emerald-200 opacity-80" 
                             : isCancelled 
@@ -1615,19 +1751,33 @@ export default function AgendaPage() {
                                 <GripVertical className="w-3 h-3" />
                               </span>
                             )}
-                            <span>{startTimeStr}</span>
+                            <span className={isBlock ? "text-amber-800 font-semibold" : ""}>{startTimeStr}</span>
                           </div>
-                          <span>{displayDuration}m</span>
+                          <span className={isBlock ? "text-amber-800 font-semibold" : ""}>{displayDuration}m</span>
                         </div>
-                        <p className="text-xs font-semibold text-zinc-900 truncate mt-1">
-                          {appt.service.name}
-                        </p>
-                        <p className="text-[11px] text-zinc-600 truncate">
-                          {appt.customer.firstName} {appt.customer.lastName}
-                        </p>
-                        <p className="text-[10px] text-zinc-400 truncate mt-0.5">
-                          {appt.staff.fullName}
-                        </p>
+                        {isBlock ? (
+                          <>
+                            <div className="flex items-center gap-1 mt-1 text-amber-950">
+                              <Coffee className="w-3 h-3 text-amber-600 shrink-0" />
+                              <p className="text-xs font-bold truncate">{appt.service.name}</p>
+                            </div>
+                            <p className="text-[10px] text-amber-700 font-medium truncate mt-0.5">
+                              {appt.staff.fullName} (Blocco)
+                            </p>
+                          </>
+                        ) : (
+                          <>
+                            <p className="text-xs font-semibold text-zinc-900 truncate mt-1">
+                              {appt.service.name}
+                            </p>
+                            <p className="text-[11px] text-zinc-600 truncate">
+                              {appt.customer.firstName} {appt.customer.lastName}
+                            </p>
+                            <p className="text-[10px] text-zinc-400 truncate mt-0.5">
+                              {appt.staff.fullName}
+                            </p>
+                          </>
+                        )}
 
                         {/* Maniglia di Resize */}
                         {!isCancelled && (
@@ -1722,18 +1872,25 @@ export default function AgendaPage() {
 
                       {/* Elenco badge appuntamenti */}
                       <div className="space-y-1 mt-1 overflow-hidden">
-                        {dayAppts.slice(0, 3).map((appt) => (
-                          <div 
-                            key={appt.id}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setSelectedAppt(appt);
-                            }}
-                            className="text-[10px] font-medium bg-zinc-100 text-zinc-800 truncate px-1.5 py-0.5 rounded hover:bg-zinc-200 transition-colors"
-                          >
-                            {new Date(appt.startTime).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })} {appt.service.name}
-                          </div>
-                        ))}
+                        {dayAppts.slice(0, 3).map((appt) => {
+                          const isBlock = appt.service.id === "srv-block" || appt.service.name?.startsWith("⏸️") || appt.customer.id === "cust-staff-block";
+                          return (
+                            <div 
+                              key={appt.id}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedAppt(appt);
+                              }}
+                              className={`text-[10px] font-medium truncate px-1.5 py-0.5 rounded transition-colors ${
+                                isBlock 
+                                  ? "bg-amber-100/90 text-amber-900 border border-amber-300/60 font-semibold" 
+                                  : "bg-zinc-100 text-zinc-800 hover:bg-zinc-200"
+                              }`}
+                            >
+                              {new Date(appt.startTime).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })} {appt.service.name}
+                            </div>
+                          );
+                        })}
                         {dayAppts.length > 3 && (
                           <p className="text-[9px] text-zinc-400 font-semibold pl-1">
                             +{dayAppts.length - 3} altri
@@ -1823,6 +1980,7 @@ export default function AgendaPage() {
                       const isBeingDragged = draggingAppt?.id === appt.id;
                       const isResizingThis = resizingAppt?.appt.id === appt.id;
                       const displayDuration = isResizingThis ? resizingAppt.currentDuration : appt.service.durationMinutes;
+                      const isBlock = appt.service.id === "srv-block" || appt.service.name?.startsWith("⏸️") || appt.customer.id === "cust-staff-block";
 
                       return (
                         <div
@@ -1838,14 +1996,16 @@ export default function AgendaPage() {
                             setDragOverSlot(null);
                           }}
                           onClick={() => setSelectedAppt(appt)}
-                          className={`group/card select-none relative p-3 bg-white border rounded-xl shadow-xs hover:shadow-md transition-all cursor-pointer overflow-hidden ${
+                          className={`group/card select-none relative p-3 border rounded-xl shadow-xs hover:shadow-md transition-all cursor-pointer overflow-hidden ${
                             isBeingDragged
                               ? "opacity-30 scale-95 ring-2 ring-zinc-500 border-dashed"
+                              : isBlock
+                              ? "bg-amber-50/80 border-dashed border-amber-300 text-amber-950 hover:border-amber-400"
                               : isCompleted 
-                              ? "border-emerald-200 opacity-80" 
+                              ? "bg-zinc-50 border-emerald-200 opacity-80" 
                               : isCancelled 
-                              ? "border-red-200 line-through opacity-60" 
-                              : "border-zinc-200 hover:border-zinc-400"
+                              ? "bg-red-50/30 border-red-200 line-through opacity-60" 
+                              : "bg-white border-zinc-200 hover:border-zinc-400"
                           }`}
                         >
                           {isResizingThis && (
@@ -1865,16 +2025,30 @@ export default function AgendaPage() {
                                   <GripVertical className="w-3.5 h-3.5" />
                                 </span>
                               )}
-                              <span className="text-[11px] font-mono font-medium text-zinc-500">
+                              <span className={`text-[11px] font-mono font-medium ${isBlock ? "text-amber-800" : "text-zinc-500"}`}>
                                 {startTimeStr} - {endTimeStr}
                               </span>
                             </div>
-                            <span className="text-[10px] font-semibold text-zinc-400 bg-zinc-100 px-1 py-0.5 rounded shrink-0">
+                            <span className={`text-[10px] font-semibold px-1 py-0.5 rounded shrink-0 ${
+                              isBlock ? "bg-amber-100 text-amber-800" : "text-zinc-400 bg-zinc-100"
+                            }`}>
                               {displayDuration}m
                             </span>
                           </div>
-                          <p className="font-semibold text-xs text-zinc-900 mt-1">{appt.service.name}</p>
-                          <p className="text-xs text-zinc-600">{appt.customer.firstName} {appt.customer.lastName}</p>
+                          {isBlock ? (
+                            <>
+                              <div className="flex items-center gap-1.5 mt-1 text-amber-950">
+                                <Coffee className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                                <p className="font-bold text-xs truncate">{appt.service.name}</p>
+                              </div>
+                              <p className="text-[11px] text-amber-700 mt-0.5 truncate">Blocco Orario Staff</p>
+                            </>
+                          ) : (
+                            <>
+                              <p className="font-semibold text-xs text-zinc-900 mt-1">{appt.service.name}</p>
+                              <p className="text-xs text-zinc-600">{appt.customer.firstName} {appt.customer.lastName}</p>
+                            </>
+                          )}
 
                           {/* Maniglia di Resize */}
                           {!isCancelled && (
@@ -1980,7 +2154,10 @@ export default function AgendaPage() {
       )}
 
       {/* 3. MODALE DETTAGLI & GESTIONE STATO APPUNTAMENTO (BOTTOM SHEET MOBILE / MODALE DESKTOP) */}
-      {selectedAppt && (
+      {selectedAppt && (() => {
+        const isBlock = selectedAppt.service.id === "srv-block" || selectedAppt.service.name?.startsWith("⏸️") || selectedAppt.customer.id === "cust-staff-block";
+
+        return (
         <div 
           className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-200"
           onClick={() => setSelectedAppt(null)}
@@ -1999,8 +2176,8 @@ export default function AgendaPage() {
 
             <div className="flex justify-between items-start px-6 py-4 sm:p-6 border-b border-zinc-100">
               <div>
-                <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">
-                  Dettaglio Appuntamento
+                <span className={`text-[10px] font-bold uppercase tracking-wider ${isBlock ? "text-amber-600" : "text-zinc-400"}`}>
+                  {isBlock ? "Blocco Orario Staff (Indisponibilità)" : "Dettaglio Appuntamento"}
                 </span>
                 <h3 className="text-xl font-bold text-zinc-900 mt-0.5">
                   {selectedAppt.service.name}
@@ -2015,181 +2192,243 @@ export default function AgendaPage() {
             </div>
 
             <div className="p-6 space-y-4 overflow-y-auto flex-1">
-              {/* Box Cliente & Staff */}
-              <div className="grid grid-cols-2 gap-3 bg-zinc-50 p-3.5 rounded-xl border border-zinc-100 text-xs">
-                <div>
-                  <p className="text-zinc-400 font-medium">Cliente</p>
-                  <p className="font-semibold text-zinc-900 mt-0.5">
-                    {selectedAppt.customer.firstName} {selectedAppt.customer.lastName}
-                  </p>
-                  <p className="text-zinc-500 mt-0.5">{selectedAppt.customer.phone}</p>
-                </div>
-                <div>
-                  <p className="text-zinc-400 font-medium">Collaboratore</p>
-                  <p className="font-semibold text-zinc-900 mt-0.5">
-                    {selectedAppt.staff.fullName}
-                  </p>
-                </div>
-              </div>
-
-              {/* Orario & Prezzo */}
-              <div className="grid grid-cols-2 gap-3 bg-zinc-50 p-3.5 rounded-xl border border-zinc-100 text-xs">
-                <div>
-                  <p className="text-zinc-400 font-medium">Data & Orario</p>
-                  <p className="font-semibold text-zinc-900 mt-0.5">
-                    {new Date(selectedAppt.startTime).toLocaleDateString("it-IT", { day: "numeric", month: "short" })} ore {new Date(selectedAppt.startTime).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}
-                  </p>
-                  <p className="text-zinc-500 mt-0.5">{selectedAppt.service.durationMinutes} minuti</p>
-                </div>
-                <div>
-                  <p className="text-zinc-400 font-medium">Importo</p>
-                  <p className="font-semibold text-zinc-900 mt-0.5 text-sm">
-                    €{selectedAppt.service.price.toFixed(2)}
-                  </p>
-                </div>
-              </div>
-
-              {/* Incassa al Banco / Checkout POS */}
-              <button
-                type="button"
-                onClick={() => {
-                  setCheckoutInitialData({
-                    appointmentId: selectedAppt.id,
-                    customerName: `${selectedAppt.customer.firstName} ${selectedAppt.customer.lastName}`.trim(),
-                    customerPhone: selectedAppt.customer.phone || "",
-                    items: [
-                      {
-                        id: selectedAppt.service.id,
-                        type: "SERVICE",
-                        name: selectedAppt.service.name,
-                        price: selectedAppt.service.price,
-                        quantity: 1,
-                        operatorId: selectedAppt.staff.id,
-                        operatorName: selectedAppt.staff.fullName
-                      }
-                    ]
-                  });
-                  setSelectedAppt(null);
-                  setIsCheckoutOpen(true);
-                }}
-                className="w-full py-3.5 sm:py-2.5 px-4 min-h-[48px] bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-zinc-950 font-bold rounded-xl text-xs flex items-center justify-center gap-2 shadow-md shadow-amber-500/20 active:scale-98 transition cursor-pointer"
-              >
-                <Receipt className="w-4 h-4" />
-                Incassa al Banco / Scontrino POS 💳
-              </button>
-
-              {/* Contatto Rapido Notifica Push Firebase & Telefono */}
-              {selectedAppt.customer?.phone && (
-                <div className="p-3.5 bg-zinc-50 border border-zinc-200/80 rounded-xl space-y-2.5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-semibold text-zinc-700 uppercase tracking-wider flex items-center gap-1.5">
-                      <MessageSquare className="w-3.5 h-3.5 text-indigo-600" />
-                      Notifiche Firebase & Contatto
-                    </span>
-                    <span className="text-[11px] text-zinc-500 font-mono">{selectedAppt.customer.phone}</span>
+              {isBlock ? (
+                <div className="space-y-4">
+                  <div className="p-4 bg-amber-50/80 border border-amber-200 rounded-xl space-y-2">
+                    <div className="flex items-center gap-2 text-amber-900 font-bold text-xs uppercase tracking-wider">
+                      <Coffee className="w-4 h-4 text-amber-600" />
+                      Fascia Oraria Indisponibile
+                    </div>
+                    <p className="text-xs text-amber-800 leading-relaxed">
+                      Questo orario è bloccato in agenda per pause, ferie o permessi del personale. I clienti non potranno prenotare questo operatore in questo lasso temporale.
+                    </p>
                   </div>
-                  <div className="flex gap-2">
+
+                  <div className="grid grid-cols-2 gap-3 bg-zinc-50 p-3.5 rounded-xl border border-zinc-100 text-xs">
+                    <div>
+                      <p className="text-zinc-400 font-medium">Collaboratore</p>
+                      <p className="font-semibold text-zinc-900 mt-0.5">
+                        {selectedAppt.staff.fullName}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-zinc-400 font-medium">Motivo Blocco</p>
+                      <p className="font-semibold text-zinc-900 mt-0.5">
+                        {selectedAppt.service.name}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="bg-zinc-50 p-3.5 rounded-xl border border-zinc-100 text-xs space-y-1">
+                    <p className="text-zinc-400 font-medium">Fascia Oraria</p>
+                    <p className="font-semibold text-zinc-900">
+                      {new Date(selectedAppt.startTime).toLocaleDateString("it-IT", { weekday: "long", day: "numeric", month: "long" })}
+                    </p>
+                    <p className="text-zinc-600 font-mono">
+                      ore {new Date(selectedAppt.startTime).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })} - {new Date(selectedAppt.endTime).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })} ({selectedAppt.service.durationMinutes} min)
+                    </p>
+                  </div>
+
+                  {(selectedAppt as any).notes && (
+                    <div className="bg-zinc-50 p-3.5 rounded-xl border border-zinc-100 text-xs">
+                      <p className="text-zinc-400 font-medium mb-1">Note aggiuntive</p>
+                      <p className="text-zinc-700">{(selectedAppt as any).notes}</p>
+                    </div>
+                  )}
+
+                  <div className="pt-2">
                     <button
-                      type="button"
-                      onClick={async () => {
-                        if (!currentUser || !selectedAppt) return;
-                        try {
-                          await sendNotification({
-                            tenantId: currentUser.uid,
-                            salonName: salonNameState,
-                            appointmentId: selectedAppt.id,
-                            customerName: `${selectedAppt.customer.firstName} ${selectedAppt.customer.lastName}`,
-                            customerPhone: selectedAppt.customer.phone,
-                            type: "REMINDER",
-                            channel: "PUSH_FCM",
-                            title: `Promemoria: ${selectedAppt.service.name}`,
-                            customMessage: `Promemoria appuntamento per ${selectedAppt.service.name} il ${new Date(selectedAppt.startTime).toLocaleDateString("it-IT", { day: "numeric", month: "long" })} alle ore ${new Date(selectedAppt.startTime).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}.`
-                          });
-                          alert("Notifica Push Firebase inviata con successo al cliente!");
-                        } catch (err: any) {
-                          alert("Impossibile inviare notifica: " + (err.message || "Errore"));
-                        }
-                      }}
-                      className="flex-1 py-3 sm:py-1.5 px-3 min-h-[48px] sm:min-h-auto bg-indigo-600 hover:bg-indigo-700 active:scale-98 text-white rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition shadow-2xs cursor-pointer"
+                      disabled={actionLoading}
+                      onClick={() => handleDeleteAppointment(selectedAppt.id)}
+                      className="w-full py-3 px-4 bg-red-50 hover:bg-red-100 border border-red-200 text-red-700 font-bold rounded-xl text-xs flex items-center justify-center gap-2 transition cursor-pointer"
                     >
-                      <MessageSquare className="w-4 h-4" />
-                      Invia Push FCM 🔔
+                      <Trash2 className="w-4 h-4 text-red-600" />
+                      Rimuovi Blocco e Libera Orario Staff
                     </button>
-                    <a
-                      href={`tel:${selectedAppt.customer.phone}`}
-                      className="py-3 sm:py-1.5 px-4 min-h-[48px] sm:min-h-auto bg-white border border-zinc-200 text-zinc-700 hover:bg-zinc-100 active:scale-98 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer"
-                    >
-                      <Phone className="w-4 h-4" />
-                      Chiama
-                    </a>
                   </div>
                 </div>
-              )}
+              ) : (
+                <>
+                  {/* Box Cliente & Staff */}
+                  <div className="grid grid-cols-2 gap-3 bg-zinc-50 p-3.5 rounded-xl border border-zinc-100 text-xs">
+                    <div>
+                      <p className="text-zinc-400 font-medium">Cliente</p>
+                      <p className="font-semibold text-zinc-900 mt-0.5">
+                        {selectedAppt.customer.firstName} {selectedAppt.customer.lastName}
+                      </p>
+                      <p className="text-zinc-500 mt-0.5">{selectedAppt.customer.phone}</p>
+                    </div>
+                    <div>
+                      <p className="text-zinc-400 font-medium">Collaboratore</p>
+                      <p className="font-semibold text-zinc-900 mt-0.5">
+                        {selectedAppt.staff.fullName}
+                      </p>
+                    </div>
+                  </div>
 
-              {/* Cambia Stato Appuntamento */}
-              <div>
-                <p className="text-xs font-semibold text-zinc-700 mb-2">Aggiorna Stato:</p>
-                <div className="grid grid-cols-3 gap-2">
+                  {/* Orario & Prezzo */}
+                  <div className="grid grid-cols-2 gap-3 bg-zinc-50 p-3.5 rounded-xl border border-zinc-100 text-xs">
+                    <div>
+                      <p className="text-zinc-400 font-medium">Data & Orario</p>
+                      <p className="font-semibold text-zinc-900 mt-0.5">
+                        {new Date(selectedAppt.startTime).toLocaleDateString("it-IT", { day: "numeric", month: "short" })} ore {new Date(selectedAppt.startTime).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}
+                      </p>
+                      <p className="text-zinc-500 mt-0.5">{selectedAppt.service.durationMinutes} minuti</p>
+                    </div>
+                    <div>
+                      <p className="text-zinc-400 font-medium">Importo</p>
+                      <p className="font-semibold text-zinc-900 mt-0.5 text-sm">
+                        €{selectedAppt.service.price.toFixed(2)}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Incassa al Banco / Checkout POS */}
                   <button
-                    disabled={actionLoading}
-                    onClick={() => handleUpdateStatus(selectedAppt.id, "CONFIRMED")}
-                    className={`py-3 sm:py-2 px-3 min-h-[48px] sm:min-h-auto rounded-xl text-xs font-semibold border text-center transition-all active:scale-98 ${
-                      selectedAppt.status === "CONFIRMED"
-                        ? "bg-zinc-900 text-white border-zinc-900 shadow-xs"
-                        : "bg-white text-zinc-700 border-zinc-200 hover:bg-zinc-50"
-                    }`}
+                    type="button"
+                    onClick={() => {
+                      setCheckoutInitialData({
+                        appointmentId: selectedAppt.id,
+                        customerName: `${selectedAppt.customer.firstName} ${selectedAppt.customer.lastName}`.trim(),
+                        customerPhone: selectedAppt.customer.phone || "",
+                        items: [
+                          {
+                            id: selectedAppt.service.id,
+                            type: "SERVICE",
+                            name: selectedAppt.service.name,
+                            price: selectedAppt.service.price,
+                            quantity: 1,
+                            operatorId: selectedAppt.staff.id,
+                            operatorName: selectedAppt.staff.fullName
+                          }
+                        ]
+                      });
+                      setSelectedAppt(null);
+                      setIsCheckoutOpen(true);
+                    }}
+                    className="w-full py-3.5 sm:py-2.5 px-4 min-h-[48px] bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-zinc-950 font-bold rounded-xl text-xs flex items-center justify-center gap-2 shadow-md shadow-amber-500/20 active:scale-98 transition cursor-pointer"
                   >
-                    Confermato
+                    <Receipt className="w-4 h-4" />
+                    Incassa al Banco / Scontrino POS 💳
                   </button>
-                  <button
-                    disabled={actionLoading}
-                    onClick={() => handleUpdateStatus(selectedAppt.id, "COMPLETED")}
-                    className={`py-3 sm:py-2 px-3 min-h-[48px] sm:min-h-auto rounded-xl text-xs font-semibold border text-center transition-all active:scale-98 ${
-                      selectedAppt.status === "COMPLETED"
-                        ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
-                        : "bg-white text-emerald-700 border-emerald-200 hover:bg-emerald-50"
-                    }`}
-                  >
-                    Completato
-                  </button>
-                  <button
-                    disabled={actionLoading}
-                    onClick={() => handleUpdateStatus(selectedAppt.id, "CANCELLED")}
-                    className={`py-3 sm:py-2 px-3 min-h-[48px] sm:min-h-auto rounded-xl text-xs font-semibold border text-center transition-all active:scale-98 ${
-                      selectedAppt.status === "CANCELLED"
-                        ? "bg-red-600 text-white border-red-600 shadow-xs"
-                        : "bg-white text-red-600 border-red-200 hover:bg-red-50"
-                    }`}
-                  >
-                    Annullato
-                  </button>
-                </div>
-              </div>
+
+                  {/* Contatto Rapido Notifica Push Firebase & Telefono */}
+                  {selectedAppt.customer?.phone && (
+                    <div className="p-3.5 bg-zinc-50 border border-zinc-200/80 rounded-xl space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-semibold text-zinc-700 uppercase tracking-wider flex items-center gap-1.5">
+                          <MessageSquare className="w-3.5 h-3.5 text-indigo-600" />
+                          Notifiche Firebase & Contatto
+                        </span>
+                        <span className="text-[11px] text-zinc-500 font-mono">{selectedAppt.customer.phone}</span>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (!currentUser || !selectedAppt) return;
+                            try {
+                              await sendNotification({
+                                tenantId: currentUser.uid,
+                                salonName: salonNameState,
+                                appointmentId: selectedAppt.id,
+                                customerName: `${selectedAppt.customer.firstName} ${selectedAppt.customer.lastName}`,
+                                customerPhone: selectedAppt.customer.phone,
+                                type: "REMINDER",
+                                channel: "PUSH_FCM",
+                                title: `Promemoria: ${selectedAppt.service.name}`,
+                                customMessage: `Promemoria appuntamento per ${selectedAppt.service.name} il ${new Date(selectedAppt.startTime).toLocaleDateString("it-IT", { day: "numeric", month: "long" })} alle ore ${new Date(selectedAppt.startTime).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}.`
+                              });
+                              alert("Notifica Push Firebase inviata con successo al cliente!");
+                            } catch (err: any) {
+                              alert("Impossibile inviare notifica: " + (err.message || "Errore"));
+                            }
+                          }}
+                          className="flex-1 py-3 sm:py-1.5 px-3 min-h-[48px] sm:min-h-auto bg-indigo-600 hover:bg-indigo-700 active:scale-98 text-white rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition shadow-2xs cursor-pointer"
+                        >
+                          <MessageSquare className="w-4 h-4" />
+                          Invia Push FCM 🔔
+                        </button>
+                        <a
+                          href={`tel:${selectedAppt.customer.phone}`}
+                          className="py-3 sm:py-1.5 px-4 min-h-[48px] sm:min-h-auto bg-white border border-zinc-200 text-zinc-700 hover:bg-zinc-100 active:scale-98 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer"
+                        >
+                          <Phone className="w-4 h-4" />
+                          Chiama
+                        </a>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Cambia Stato Appuntamento */}
+                  <div>
+                    <p className="text-xs font-semibold text-zinc-700 mb-2">Aggiorna Stato:</p>
+                    <div className="grid grid-cols-3 gap-2">
+                      <button
+                        disabled={actionLoading}
+                        onClick={() => handleUpdateStatus(selectedAppt.id, "CONFIRMED")}
+                        className={`py-3 sm:py-2 px-3 min-h-[48px] sm:min-h-auto rounded-xl text-xs font-semibold border text-center transition-all active:scale-98 ${
+                          selectedAppt.status === "CONFIRMED"
+                            ? "bg-zinc-900 text-white border-zinc-900 shadow-xs"
+                            : "bg-white text-zinc-700 border-zinc-200 hover:bg-zinc-50"
+                        }`}
+                      >
+                        Confermato
+                      </button>
+                      <button
+                        disabled={actionLoading}
+                        onClick={() => handleUpdateStatus(selectedAppt.id, "COMPLETED")}
+                        className={`py-3 sm:py-2 px-3 min-h-[48px] sm:min-h-auto rounded-xl text-xs font-semibold border text-center transition-all active:scale-98 ${
+                          selectedAppt.status === "COMPLETED"
+                            ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
+                            : "bg-white text-emerald-700 border-emerald-200 hover:bg-emerald-50"
+                        }`}
+                      >
+                        Completato
+                      </button>
+                      <button
+                        disabled={actionLoading}
+                        onClick={() => handleUpdateStatus(selectedAppt.id, "CANCELLED")}
+                        className={`py-3 sm:py-2 px-3 min-h-[48px] sm:min-h-auto rounded-xl text-xs font-semibold border text-center transition-all active:scale-98 ${
+                          selectedAppt.status === "CANCELLED"
+                            ? "bg-red-600 text-white border-red-600 shadow-xs"
+                            : "bg-white text-red-600 border-red-200 hover:bg-red-50"
+                        }`}
+                      >
+                        Annullato
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
 
             {/* Footer con opzione Elimina */}
             <div className="p-4 sm:p-6 bg-zinc-50 border-t border-zinc-100 flex justify-between items-center">
-              <button
-                disabled={actionLoading}
-                onClick={() => handleDeleteAppointment(selectedAppt.id)}
-                className="flex items-center gap-1.5 text-xs text-red-600 hover:text-red-700 font-semibold p-2 transition-colors min-h-[44px]"
-              >
-                <Trash2 className="w-4 h-4" />
-                Elimina Definitivamente
-              </button>
+              {!isBlock && (
+                <button
+                  disabled={actionLoading}
+                  onClick={() => handleDeleteAppointment(selectedAppt.id)}
+                  className="flex items-center gap-1.5 text-xs text-red-600 hover:text-red-700 font-semibold p-2 transition-colors min-h-[44px]"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Elimina Definitivamente
+                </button>
+              )}
 
               <button
                 onClick={() => setSelectedAppt(null)}
-                className="px-5 py-2.5 sm:px-4 sm:py-2 bg-white border border-zinc-200 rounded-xl text-xs font-bold text-zinc-800 hover:bg-zinc-100 active:scale-98 shadow-xs min-h-[44px] sm:min-h-auto flex items-center justify-center"
+                className="px-5 py-2.5 sm:px-4 sm:py-2 bg-white border border-zinc-200 rounded-xl text-xs font-bold text-zinc-800 hover:bg-zinc-100 active:scale-98 shadow-xs min-h-[44px] sm:min-h-auto flex items-center justify-center ml-auto"
               >
                 Chiudi
               </button>
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
 
-      {/* 4. DRAWER: NUOVO APPUNTAMENTO */}
+      {/* 4. DRAWER: NUOVO APPUNTAMENTO O BLOCCO ORARIO */}
       {isDrawerOpen && (
         <>
           <div 
@@ -2200,226 +2439,397 @@ export default function AgendaPage() {
             
             <div className="flex items-center justify-between p-6 border-b border-zinc-200/60">
               <div>
-                <h2 className="text-lg font-semibold text-zinc-900 tracking-tight">Nuovo Appuntamento</h2>
-                <p className="text-xs text-zinc-500 mt-0.5">Inserisci un nuovo appuntamento in agenda.</p>
+                <h2 className="text-lg font-semibold text-zinc-900 tracking-tight">
+                  {drawerMode === "APPOINTMENT" ? "Nuovo Appuntamento" : "Blocca Orario Staff"}
+                </h2>
+                <p className="text-xs text-zinc-500 mt-0.5">
+                  {drawerMode === "APPOINTMENT" 
+                    ? "Inserisci un nuovo appuntamento in agenda."
+                    : "Imposta pause, ferie o permessi del personale."}
+                </p>
               </div>
               <button 
                 onClick={() => setIsDrawerOpen(false)}
-                className="p-1.5 text-zinc-400 hover:text-zinc-900 hover:bg-zinc-100 rounded-lg transition-colors"
+                className="p-1.5 text-zinc-400 hover:text-zinc-900 hover:bg-zinc-100 rounded-lg transition-colors cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleCreateAppointment} className="flex-1 flex flex-col justify-between overflow-y-auto">
-              <div className="p-6 space-y-5">
-                
-                {/* Selezione / Creazione Cliente */}
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <label className="block text-xs font-semibold text-zinc-700 uppercase tracking-wider">
-                      Cliente *
-                    </label>
-                    <div className="flex bg-zinc-100 p-0.5 rounded-lg border border-zinc-200">
-                      <button
-                        type="button"
-                        onClick={() => setClientMode("existing")}
-                        className={`px-2.5 py-1 text-[11px] font-semibold rounded-md transition-all ${
-                          clientMode === "existing"
-                            ? "bg-white text-zinc-900 shadow-xs"
-                            : "text-zinc-500 hover:text-zinc-800"
-                        }`}
-                      >
-                        Già registrato
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setClientMode("new")}
-                        className={`px-2.5 py-1 text-[11px] font-semibold rounded-md transition-all flex items-center gap-1 ${
-                          clientMode === "new"
-                            ? "bg-zinc-900 text-white shadow-xs"
-                            : "text-zinc-500 hover:text-zinc-800"
-                        }`}
-                      >
-                        <Plus className="w-3 h-3" />
-                        Nuovo Cliente
-                      </button>
-                    </div>
-                  </div>
+            {/* Segmented Selector Drawer Mode */}
+            <div className="px-6 pt-4 pb-2">
+              <div className="flex bg-zinc-100 p-1 rounded-xl border border-zinc-200">
+                <button
+                  type="button"
+                  onClick={() => setDrawerMode("APPOINTMENT")}
+                  className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                    drawerMode === "APPOINTMENT"
+                      ? "bg-white text-zinc-900 shadow-xs"
+                      : "text-zinc-500 hover:text-zinc-800"
+                  }`}
+                >
+                  <Scissors className="w-3.5 h-3.5" />
+                  Appuntamento
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDrawerMode("BLOCK");
+                    if (activeStaff.length > 0 && !blockStaffId) {
+                      setBlockStaffId(activeStaff[0].id);
+                    }
+                    if (!blockDate) {
+                      setBlockDate(selectedDate ? selectedDate.toISOString().split("T")[0] : new Date().toISOString().split("T")[0]);
+                    }
+                  }}
+                  className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                    drawerMode === "BLOCK"
+                      ? "bg-amber-500 text-zinc-950 font-bold shadow-xs"
+                      : "text-zinc-500 hover:text-zinc-800"
+                  }`}
+                >
+                  <Coffee className="w-3.5 h-3.5" />
+                  Pausa / Ferie / Permesso
+                </button>
+              </div>
+            </div>
 
-                  {clientMode === "existing" ? (
-                    <div>
-                      <div className="relative">
-                        <UserIcon className="absolute left-3 top-2.5 w-4 h-4 text-zinc-400" />
-                        <select 
-                          value={formCustomerId}
-                          onChange={(e) => setFormCustomerId(e.target.value)}
-                          className="w-full pl-9 pr-4 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:bg-white transition-all cursor-pointer"
+            {drawerMode === "APPOINTMENT" ? (
+              <form onSubmit={handleCreateAppointment} className="flex-1 flex flex-col justify-between overflow-y-auto">
+                <div className="p-6 space-y-5">
+                  
+                  {/* Selezione / Creazione Cliente */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <label className="block text-xs font-semibold text-zinc-700 uppercase tracking-wider">
+                        Cliente *
+                      </label>
+                      <div className="flex bg-zinc-100 p-0.5 rounded-lg border border-zinc-200">
+                        <button
+                          type="button"
+                          onClick={() => setClientMode("existing")}
+                          className={`px-2.5 py-1 text-[11px] font-semibold rounded-md transition-all ${
+                            clientMode === "existing"
+                              ? "bg-white text-zinc-900 shadow-xs"
+                              : "text-zinc-500 hover:text-zinc-800"
+                          }`}
                         >
-                          <option value="">Seleziona cliente...</option>
-                          {customers.map((c) => (
-                            <option key={c.id} value={c.id}>
-                              {c.lastName} {c.firstName} ({c.phone})
-                            </option>
-                          ))}
-                        </select>
+                          Già registrato
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setClientMode("new")}
+                          className={`px-2.5 py-1 text-[11px] font-semibold rounded-md transition-all flex items-center gap-1 ${
+                            clientMode === "new"
+                              ? "bg-zinc-900 text-white shadow-xs"
+                              : "text-zinc-500 hover:text-zinc-800"
+                          }`}
+                        >
+                          <Plus className="w-3 h-3" />
+                          Nuovo Cliente
+                        </button>
                       </div>
-                      {customers.length === 0 ? (
-                        <p className="text-[11px] text-amber-600 mt-1">
-                          Nessun cliente registrato per questo salone. Seleziona <strong>"Nuovo Cliente"</strong> in alto per registrarne uno.
-                        </p>
-                      ) : (
-                        <p className="text-[11px] text-zinc-400 mt-1">
-                          {customers.length} clienti in archivio per il tuo salone.
-                        </p>
-                      )}
                     </div>
-                  ) : (
-                    <div className="p-3.5 bg-zinc-50 border border-zinc-200/80 rounded-xl space-y-3">
-                      <div className="flex items-center gap-2 text-xs text-zinc-700 font-semibold border-b border-zinc-200/60 pb-2">
-                        <UserIcon className="w-3.5 h-3.5 text-zinc-500" />
-                        Dati Anagrafica Nuovo Cliente
+
+                    {clientMode === "existing" ? (
+                      <div>
+                        <div className="relative">
+                          <UserIcon className="absolute left-3 top-2.5 w-4 h-4 text-zinc-400" />
+                          <select 
+                            value={formCustomerId}
+                            onChange={(e) => setFormCustomerId(e.target.value)}
+                            className="w-full pl-9 pr-4 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:bg-white transition-all cursor-pointer"
+                          >
+                            <option value="">Seleziona cliente...</option>
+                            {customers.map((c) => (
+                              <option key={c.id} value={c.id}>
+                                {c.lastName} {c.firstName} ({c.phone})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        {customers.length === 0 ? (
+                          <p className="text-[11px] text-amber-600 mt-1">
+                            Nessun cliente registrato per questo salone. Seleziona <strong>"Nuovo Cliente"</strong> in alto per registrarne uno.
+                          </p>
+                        ) : (
+                          <p className="text-[11px] text-zinc-400 mt-1">
+                            {customers.length} clienti in archivio per il tuo salone.
+                          </p>
+                        )}
                       </div>
-                      <p className="text-[11px] text-zinc-500 leading-tight">
-                        Verrà creato un nuovo account cliente registrato nei nostri database (Cloud SQL + profilo Firestore).
+                    ) : (
+                      <div className="p-3.5 bg-zinc-50 border border-zinc-200/80 rounded-xl space-y-3">
+                        <div className="flex items-center gap-2 text-xs text-zinc-700 font-semibold border-b border-zinc-200/60 pb-2">
+                          <UserIcon className="w-3.5 h-3.5 text-zinc-500" />
+                          Dati Anagrafica Nuovo Cliente
+                        </div>
+                        <p className="text-[11px] text-zinc-500 leading-tight">
+                          Verrà creato un nuovo account cliente registrato nei nostri database (Cloud SQL + profilo Firestore).
+                        </p>
+
+                        <div className="grid grid-cols-2 gap-2.5">
+                          <div>
+                            <label className="block text-[10px] font-semibold text-zinc-600 uppercase mb-1">
+                              Nome *
+                            </label>
+                            <input
+                              type="text"
+                              placeholder="Es. Marco"
+                              value={newCustomerFirstName}
+                              onChange={(e) => setNewCustomerFirstName(e.target.value)}
+                              className="w-full px-2.5 py-1.5 bg-white border border-zinc-200 rounded-md text-xs focus:ring-2 focus:ring-zinc-900 focus:outline-none"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-semibold text-zinc-600 uppercase mb-1">
+                              Cognome *
+                            </label>
+                            <input
+                              type="text"
+                              placeholder="Es. Bianchi"
+                              value={newCustomerLastName}
+                              onChange={(e) => setNewCustomerLastName(e.target.value)}
+                              className="w-full px-2.5 py-1.5 bg-white border border-zinc-200 rounded-md text-xs focus:ring-2 focus:ring-zinc-900 focus:outline-none"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2.5">
+                          <div>
+                            <label className="block text-[10px] font-semibold text-zinc-600 uppercase mb-1">
+                              Telefono *
+                            </label>
+                            <input
+                              type="tel"
+                              placeholder="Es. 340 1234567"
+                              value={newCustomerPhone}
+                              onChange={(e) => setNewCustomerPhone(e.target.value)}
+                              className="w-full px-2.5 py-1.5 bg-white border border-zinc-200 rounded-md text-xs focus:ring-2 focus:ring-zinc-900 focus:outline-none"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-semibold text-zinc-600 uppercase mb-1">
+                              Email (Opzionale)
+                            </label>
+                            <input
+                              type="email"
+                              placeholder="cliente@email.it"
+                              value={newCustomerEmail}
+                              onChange={(e) => setNewCustomerEmail(e.target.value)}
+                              className="w-full px-2.5 py-1.5 bg-white border border-zinc-200 rounded-md text-xs focus:ring-2 focus:ring-zinc-900 focus:outline-none"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2.5">
+                          <div>
+                            <label className="block text-[10px] font-semibold text-zinc-600 uppercase mb-1">
+                              Data di Nascita
+                            </label>
+                            <input
+                              type="date"
+                              value={newCustomerBirthday}
+                              onChange={(e) => setNewCustomerBirthday(e.target.value)}
+                              className="w-full px-2.5 py-1.5 bg-white border border-zinc-200 rounded-md text-xs focus:ring-2 focus:ring-zinc-900 focus:outline-none"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-semibold text-zinc-600 uppercase mb-1">
+                              Note Tecniche
+                            </label>
+                            <input
+                              type="text"
+                              placeholder="Es. Cute sensibile, taglio #2"
+                              value={newCustomerNotes}
+                              onChange={(e) => setNewCustomerNotes(e.target.value)}
+                              className="w-full px-2.5 py-1.5 bg-white border border-zinc-200 rounded-md text-xs focus:ring-2 focus:ring-zinc-900 focus:outline-none"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Selezione Servizio */}
+                  <div>
+                    <label className="block text-xs font-semibold text-zinc-700 uppercase tracking-wider mb-1.5">
+                      Servizio *
+                    </label>
+                    <div className="relative">
+                      <Scissors className="absolute left-3 top-2.5 w-4 h-4 text-zinc-400" />
+                      <select 
+                        required
+                        value={formServiceId}
+                        onChange={(e) => setFormServiceId(e.target.value)}
+                        className="w-full pl-9 pr-4 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:bg-white transition-all cursor-pointer"
+                      >
+                        <option value="">Seleziona trattamento...</option>
+                        {services.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.name} — €{s.price} ({s.durationMinutes} min)
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    {services.length === 0 && (
+                      <p className="text-[11px] text-amber-600 mt-1">
+                        Nessun trattamento a listino. Vai in <a href="/trattamenti" className="underline font-semibold hover:text-amber-700">"Trattamenti"</a> per creare i tuoi servizi.
                       </p>
+                    )}
+                  </div>
 
-                      <div className="grid grid-cols-2 gap-2.5">
-                        <div>
-                          <label className="block text-[10px] font-semibold text-zinc-600 uppercase mb-1">
-                            Nome *
-                          </label>
-                          <input
-                            type="text"
-                            placeholder="Es. Marco"
-                            value={newCustomerFirstName}
-                            onChange={(e) => setNewCustomerFirstName(e.target.value)}
-                            className="w-full px-2.5 py-1.5 bg-white border border-zinc-200 rounded-md text-xs focus:ring-2 focus:ring-zinc-900 focus:outline-none"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-[10px] font-semibold text-zinc-600 uppercase mb-1">
-                            Cognome *
-                          </label>
-                          <input
-                            type="text"
-                            placeholder="Es. Bianchi"
-                            value={newCustomerLastName}
-                            onChange={(e) => setNewCustomerLastName(e.target.value)}
-                            className="w-full px-2.5 py-1.5 bg-white border border-zinc-200 rounded-md text-xs focus:ring-2 focus:ring-zinc-900 focus:outline-none"
-                          />
-                        </div>
-                      </div>
+                  {/* Selezione Staff */}
+                  <div>
+                    <label className="block text-xs font-semibold text-zinc-700 uppercase tracking-wider mb-1.5">
+                      Collaboratore / Staff *
+                    </label>
+                    <div className="relative">
+                      <Users className="absolute left-3 top-2.5 w-4 h-4 text-zinc-400" />
+                      <select 
+                        required
+                        value={formStaffId}
+                        onChange={(e) => setFormStaffId(e.target.value)}
+                        className="w-full pl-9 pr-4 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:bg-white transition-all cursor-pointer"
+                      >
+                        <option value="">Assegna collaboratore...</option>
+                        {activeStaff.map((st) => (
+                          <option key={st.id} value={st.id}>
+                            {st.fullName} ({st.role})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
 
-                      <div className="grid grid-cols-2 gap-2.5">
-                        <div>
-                          <label className="block text-[10px] font-semibold text-zinc-600 uppercase mb-1">
-                            Telefono *
-                          </label>
-                          <input
-                            type="tel"
-                            placeholder="Es. 340 1234567"
-                            value={newCustomerPhone}
-                            onChange={(e) => setNewCustomerPhone(e.target.value)}
-                            className="w-full px-2.5 py-1.5 bg-white border border-zinc-200 rounded-md text-xs focus:ring-2 focus:ring-zinc-900 focus:outline-none"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-[10px] font-semibold text-zinc-600 uppercase mb-1">
-                            Email (Opzionale)
-                          </label>
-                          <input
-                            type="email"
-                            placeholder="cliente@email.it"
-                            value={newCustomerEmail}
-                            onChange={(e) => setNewCustomerEmail(e.target.value)}
-                            className="w-full px-2.5 py-1.5 bg-white border border-zinc-200 rounded-md text-xs focus:ring-2 focus:ring-zinc-900 focus:outline-none"
-                          />
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-2.5">
-                        <div>
-                          <label className="block text-[10px] font-semibold text-zinc-600 uppercase mb-1">
-                            Data di Nascita
-                          </label>
-                          <input
-                            type="date"
-                            value={newCustomerBirthday}
-                            onChange={(e) => setNewCustomerBirthday(e.target.value)}
-                            className="w-full px-2.5 py-1.5 bg-white border border-zinc-200 rounded-md text-xs focus:ring-2 focus:ring-zinc-900 focus:outline-none"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-[10px] font-semibold text-zinc-600 uppercase mb-1">
-                            Note Tecniche
-                          </label>
-                          <input
-                            type="text"
-                            placeholder="Es. Cute sensibile, taglio #2"
-                            value={newCustomerNotes}
-                            onChange={(e) => setNewCustomerNotes(e.target.value)}
-                            className="w-full px-2.5 py-1.5 bg-white border border-zinc-200 rounded-md text-xs focus:ring-2 focus:ring-zinc-900 focus:outline-none"
-                          />
-                        </div>
+                  {/* Data e Ora */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-zinc-700 uppercase tracking-wider mb-1.5">
+                        Data *
+                      </label>
+                      <div className="relative">
+                        <CalendarIcon className="absolute left-3 top-2.5 w-4 h-4 text-zinc-400" />
+                        <input 
+                          type="date" 
+                          required
+                          value={formDate}
+                          onChange={(e) => setFormDate(e.target.value)}
+                          className="w-full pl-9 pr-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-xs font-medium focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:bg-white transition-all"
+                        />
                       </div>
                     </div>
-                  )}
+                    <div>
+                      <label className="block text-xs font-semibold text-zinc-700 uppercase tracking-wider mb-1.5">
+                        Ora Inizio *
+                      </label>
+                      <div className="relative">
+                        <Clock className="absolute left-3 top-2.5 w-4 h-4 text-zinc-400" />
+                        <input 
+                          type="time" 
+                          required
+                          value={formTime}
+                          onChange={(e) => setFormTime(e.target.value)}
+                          className="w-full pl-9 pr-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-xs font-medium focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:bg-white transition-all"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
                 </div>
 
-                {/* Selezione Servizio */}
-                <div>
-                  <label className="block text-xs font-semibold text-zinc-700 uppercase tracking-wider mb-1.5">
-                    Servizio *
-                  </label>
-                  <div className="relative">
-                    <Scissors className="absolute left-3 top-2.5 w-4 h-4 text-zinc-400" />
-                    <select 
-                      required
-                      value={formServiceId}
-                      onChange={(e) => setFormServiceId(e.target.value)}
-                      className="w-full pl-9 pr-4 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:bg-white transition-all cursor-pointer"
-                    >
-                      <option value="">Seleziona trattamento...</option>
-                      {services.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.name} — €{s.price} ({s.durationMinutes} min)
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  {services.length === 0 && (
-                    <p className="text-[11px] text-amber-600 mt-1">
-                      Nessun trattamento a listino. Vai in <a href="/trattamenti" className="underline font-semibold hover:text-amber-700">"Trattamenti"</a> per creare i tuoi servizi.
+                {/* Bottoni submit */}
+                <div className="p-6 border-t border-zinc-200/60 bg-zinc-50 flex gap-3">
+                  <button 
+                    type="button"
+                    onClick={() => setIsDrawerOpen(false)}
+                    className="flex-1 px-4 py-2.5 bg-white border border-zinc-200 text-zinc-700 text-xs font-semibold rounded-lg hover:bg-zinc-50 transition-colors shadow-xs"
+                  >
+                    Annulla
+                  </button>
+                  <button 
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="flex-1 px-4 py-2.5 bg-zinc-900 text-white text-xs font-semibold rounded-lg hover:bg-zinc-800 transition-colors flex justify-center items-center gap-2 shadow-xs disabled:opacity-50"
+                  >
+                    {isSubmitting ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <>
+                        <Check className="w-4 h-4" />
+                        Conferma Prenotazione
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <form onSubmit={handleCreateBlock} className="flex-1 flex flex-col justify-between overflow-y-auto">
+                <div className="p-6 space-y-5">
+                  <div className="p-3.5 bg-amber-50/80 border border-amber-200 rounded-xl space-y-1 text-xs text-amber-900">
+                    <p className="font-bold flex items-center gap-1.5">
+                      <Lock className="w-3.5 h-3.5 text-amber-700" />
+                      Blocco Atomico Calendario
                     </p>
-                  )}
-                </div>
-
-                {/* Selezione Staff */}
-                <div>
-                  <label className="block text-xs font-semibold text-zinc-700 uppercase tracking-wider mb-1.5">
-                    Collaboratore / Staff *
-                  </label>
-                  <div className="relative">
-                    <Users className="absolute left-3 top-2.5 w-4 h-4 text-zinc-400" />
-                    <select 
-                      required
-                      value={formStaffId}
-                      onChange={(e) => setFormStaffId(e.target.value)}
-                      className="w-full pl-9 pr-4 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:bg-white transition-all cursor-pointer"
-                    >
-                      <option value="">Assegna collaboratore...</option>
-                      {activeStaff.map((st) => (
-                        <option key={st.id} value={st.id}>
-                          {st.fullName} ({st.role})
-                        </option>
-                      ))}
-                    </select>
+                    <p className="text-[11px] text-amber-800 leading-relaxed">
+                      Questa fascia oraria verrà bloccata sia in questa agenda che nel wizard di prenotazione online dei clienti.
+                    </p>
                   </div>
-                </div>
 
-                {/* Data e Ora */}
-                <div className="grid grid-cols-2 gap-3">
+                  {/* Collaboratore */}
+                  <div>
+                    <label className="block text-xs font-semibold text-zinc-700 uppercase tracking-wider mb-1.5">
+                      Collaboratore / Staff *
+                    </label>
+                    <div className="relative">
+                      <Users className="absolute left-3 top-2.5 w-4 h-4 text-zinc-400" />
+                      <select
+                        required
+                        value={blockStaffId}
+                        onChange={(e) => setBlockStaffId(e.target.value)}
+                        className="w-full pl-9 pr-4 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:bg-white transition-all cursor-pointer"
+                      >
+                        <option value="">Seleziona collaboratore...</option>
+                        {activeStaff.map((st) => (
+                          <option key={st.id} value={st.id}>
+                            {st.fullName} ({st.role})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Motivo Blocco */}
+                  <div>
+                    <label className="block text-xs font-semibold text-zinc-700 uppercase tracking-wider mb-1.5">
+                      Tipo di Blocco / Motivo *
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {[
+                        { label: "Pausa Pranzo", icon: "🥪" },
+                        { label: "Ferie", icon: "🏖️" },
+                        { label: "Permesso Personale", icon: "🕒" },
+                        { label: "Formazione / Corso", icon: "📚" },
+                        { label: "Altro Blocco", icon: "⏸️" }
+                      ].map((item) => (
+                        <button
+                          key={item.label}
+                          type="button"
+                          onClick={() => setBlockReason(item.label)}
+                          className={`p-2.5 rounded-xl border text-xs font-semibold text-left transition-all flex items-center gap-2 cursor-pointer ${
+                            blockReason === item.label
+                              ? "bg-zinc-900 text-white border-zinc-900 shadow-xs"
+                              : "bg-zinc-50 text-zinc-700 border-zinc-200 hover:bg-zinc-100"
+                          }`}
+                        >
+                          <span>{item.icon}</span>
+                          <span className="truncate">{item.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Data */}
                   <div>
                     <label className="block text-xs font-semibold text-zinc-700 uppercase tracking-wider mb-1.5">
                       Data *
@@ -2429,56 +2839,107 @@ export default function AgendaPage() {
                       <input 
                         type="date" 
                         required
-                        value={formDate}
-                        onChange={(e) => setFormDate(e.target.value)}
+                        value={blockDate}
+                        onChange={(e) => setBlockDate(e.target.value)}
                         className="w-full pl-9 pr-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-xs font-medium focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:bg-white transition-all"
                       />
                     </div>
                   </div>
+
+                  {/* Opzione Intera Giornata */}
+                  <div className="flex items-center gap-2.5 p-3 bg-zinc-50 border border-zinc-200 rounded-xl">
+                    <input
+                      type="checkbox"
+                      id="blockIsAllDay"
+                      checked={blockIsAllDay}
+                      onChange={(e) => setBlockIsAllDay(e.target.checked)}
+                      className="w-4 h-4 rounded text-zinc-900 focus:ring-zinc-900 cursor-pointer"
+                    />
+                    <label htmlFor="blockIsAllDay" className="text-xs font-semibold text-zinc-800 cursor-pointer select-none">
+                      Blocca per l&apos;intera giornata lavorativa (es. Ferie)
+                    </label>
+                  </div>
+
+                  {/* Orario e Durata (se non intera giornata) */}
+                  {!blockIsAllDay && (
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-semibold text-zinc-700 uppercase tracking-wider mb-1.5">
+                          Ora Inizio *
+                        </label>
+                        <div className="relative">
+                          <Clock className="absolute left-3 top-2.5 w-4 h-4 text-zinc-400" />
+                          <input 
+                            type="time" 
+                            required
+                            value={blockStartTime}
+                            onChange={(e) => setBlockStartTime(e.target.value)}
+                            className="w-full pl-9 pr-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-xs font-medium focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:bg-white transition-all"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-zinc-700 uppercase tracking-wider mb-1.5">
+                          Durata *
+                        </label>
+                        <select
+                          value={blockDurationMinutes}
+                          onChange={(e) => setBlockDurationMinutes(Number(e.target.value))}
+                          className="w-full px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-xs font-medium focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:bg-white transition-all cursor-pointer"
+                        >
+                          <option value={30}>30 minuti</option>
+                          <option value={45}>45 minuti</option>
+                          <option value={60}>1 ora</option>
+                          <option value={90}>1 ora 30 min</option>
+                          <option value={120}>2 ore</option>
+                          <option value={180}>3 ore</option>
+                          <option value={240}>4 ore (mezza giornata)</option>
+                        </select>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Note opzionali */}
                   <div>
                     <label className="block text-xs font-semibold text-zinc-700 uppercase tracking-wider mb-1.5">
-                      Ora Inizio *
+                      Note Interne (Opzionali)
                     </label>
-                    <div className="relative">
-                      <Clock className="absolute left-3 top-2.5 w-4 h-4 text-zinc-400" />
-                      <input 
-                        type="time" 
-                        required
-                        value={formTime}
-                        onChange={(e) => setFormTime(e.target.value)}
-                        className="w-full pl-9 pr-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-xs font-medium focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:bg-white transition-all"
-                      />
-                    </div>
+                    <textarea
+                      rows={2}
+                      value={blockNotes}
+                      onChange={(e) => setBlockNotes(e.target.value)}
+                      placeholder="Es. Visita medica, ferie estive concordate..."
+                      className="w-full p-2.5 bg-zinc-50 border border-zinc-200 rounded-lg text-xs focus:ring-2 focus:ring-zinc-900 focus:bg-white focus:outline-none transition-all"
+                    />
                   </div>
                 </div>
 
-              </div>
-
-              {/* Bottoni submit */}
-              <div className="p-6 border-t border-zinc-200/60 bg-zinc-50 flex gap-3">
-                <button 
-                  type="button"
-                  onClick={() => setIsDrawerOpen(false)}
-                  className="flex-1 px-4 py-2.5 bg-white border border-zinc-200 text-zinc-700 text-xs font-semibold rounded-lg hover:bg-zinc-50 transition-colors shadow-xs"
-                >
-                  Annulla
-                </button>
-                <button 
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="flex-1 px-4 py-2.5 bg-zinc-900 text-white text-xs font-semibold rounded-lg hover:bg-zinc-800 transition-colors flex justify-center items-center gap-2 shadow-xs disabled:opacity-50"
-                >
-                  {isSubmitting ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <>
-                      <Check className="w-4 h-4" />
-                      Conferma Prenotazione
-                    </>
-                  )}
-                </button>
-              </div>
-            </form>
+                {/* Bottoni submit blocco */}
+                <div className="p-6 border-t border-zinc-200/60 bg-zinc-50 flex gap-3">
+                  <button 
+                    type="button"
+                    onClick={() => setIsDrawerOpen(false)}
+                    className="flex-1 px-4 py-2.5 bg-white border border-zinc-200 text-zinc-700 text-xs font-semibold rounded-lg hover:bg-zinc-50 transition-colors shadow-xs"
+                  >
+                    Annulla
+                  </button>
+                  <button 
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="flex-1 px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-zinc-950 text-xs font-bold rounded-lg transition-colors flex justify-center items-center gap-2 shadow-xs disabled:opacity-50 cursor-pointer"
+                  >
+                    {isSubmitting ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <>
+                        <Coffee className="w-4 h-4" />
+                        Conferma Blocco Orario
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            )}
 
           </div>
         </>
@@ -2512,7 +2973,8 @@ export default function AgendaPage() {
       {/* 7. FLOATING ACTION BUTTON (FAB) PER SMARTPHONE */}
       <button
         onClick={() => {
-          setFormDate(selectedDate.toISOString().split("T")[0]);
+          setFormDate(selectedDate ? selectedDate.toISOString().split("T")[0] : new Date().toISOString().split("T")[0]);
+          setDrawerMode("APPOINTMENT");
           setIsDrawerOpen(true);
         }}
         className="sm:hidden fixed bottom-6 right-5 z-40 w-14 h-14 rounded-full bg-zinc-900 text-white shadow-2xl flex items-center justify-center hover:bg-zinc-800 active:scale-90 transition-all cursor-pointer border-2 border-white/20"

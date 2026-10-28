@@ -33,14 +33,25 @@ import {
   requestPushNotificationPermission, 
   getPushPermissionStatus 
 } from "@/lib/fcm-client";
+import { 
+  DaySchedule, 
+  fetchSalonWorkingHours, 
+  saveSalonWorkingHours, 
+  DEFAULT_WORKING_HOURS 
+} from "@/lib/working-hours-store";
 
-type TabType = "profilo" | "salone" | "team" | "notifiche" | "abbonamento";
+type TabType = "profilo" | "salone" | "orari" | "team" | "notifiche" | "abbonamento";
 
 function ImpostazioniContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<TabType>("profilo");
   const [isInviteOpen, setIsInviteOpen] = useState(false);
+
+  // Orari Salone State
+  const [workingHours, setWorkingHours] = useState<DaySchedule[]>(DEFAULT_WORKING_HOURS);
+  const [savingHours, setSavingHours] = useState(false);
+  const [hoursSaveMessage, setHoursSaveMessage] = useState("");
 
   // Auth state
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
@@ -186,6 +197,22 @@ function ImpostazioniContent() {
     }
   };
 
+  const handleSaveWorkingHours = async () => {
+    if (!currentUser) return;
+    setSavingHours(true);
+    setHoursSaveMessage("");
+    try {
+      const tid = getSalonTenantId(currentUser.uid);
+      await saveSalonWorkingHours(tid, workingHours);
+      setHoursSaveMessage("Orari di apertura e chiusura salvati con successo!");
+      setTimeout(() => setHoursSaveMessage(""), 3500);
+    } catch (err: any) {
+      setHoursSaveMessage("Errore durante il salvataggio degli orari.");
+    } finally {
+      setSavingHours(false);
+    }
+  };
+
   const handleDirectUpgrade = async (targetPlan: "MEDIUM" | "PRO") => {
     if (!currentUser) return;
     setIsUpgrading(true);
@@ -221,7 +248,7 @@ function ImpostazioniContent() {
   // Leggi il parametro 'tab' dall'URL al montaggio
   useEffect(() => {
     const tab = searchParams.get("tab") as TabType;
-    if (tab && ["profilo", "salone", "team", "notifiche", "abbonamento"].includes(tab)) {
+    if (tab && ["profilo", "salone", "orari", "team", "notifiche", "abbonamento"].includes(tab)) {
       setActiveTab(tab);
     }
   }, [searchParams]);
@@ -262,6 +289,11 @@ function ImpostazioniContent() {
 
         // Carica impostazioni e log notifiche Firebase Cloud Messaging (FCM)
         loadNotificationData(tid).catch(console.error);
+
+        // Carica orari di apertura del salone
+        fetchSalonWorkingHours(tid).then((hours) => {
+          if (hours && hours.length > 0) setWorkingHours(hours);
+        }).catch(console.error);
 
         // Determina il provider di autenticazione
         const providers = user.providerData.map(p => p.providerId);
@@ -528,6 +560,13 @@ function ImpostazioniContent() {
               Dettagli Salone
             </button>
             <button
+              onClick={() => setActiveTab("orari")}
+              className={`flex items-center gap-2 sm:gap-3 px-3.5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors text-left shrink-0 whitespace-nowrap ${activeTab === "orari" ? "bg-zinc-100 text-zinc-900 font-semibold" : "text-zinc-500 hover:text-zinc-900 hover:bg-zinc-50"}`}
+            >
+              <Clock className="w-4 h-4 text-amber-500" />
+              Orari Salone
+            </button>
+            <button
               onClick={() => setActiveTab("team")}
               className={`flex items-center gap-2 sm:gap-3 px-3.5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors text-left shrink-0 whitespace-nowrap ${activeTab === "team" ? "bg-zinc-100 text-zinc-900 font-semibold" : "text-zinc-500 hover:text-zinc-900 hover:bg-zinc-50"}`}
             >
@@ -787,6 +826,181 @@ function ImpostazioniContent() {
                 >
                   {savingSalon ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
                   <span>Aggiorna Dati Salone</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* TAB: ORARI SALONE & GIORNI DI CHIUSURA */}
+          {activeTab === "orari" && (
+            <div className="space-y-6 animate-in fade-in duration-300">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-lg font-semibold text-zinc-900 flex items-center gap-2">
+                    <Clock className="w-5 h-5 text-amber-500" />
+                    Orari di Apertura & Giorni di Chiusura
+                  </h3>
+                  <p className="text-xs sm:text-sm text-zinc-500 mt-0.5">
+                    Imposta gli orari e i giorni di lavoro. I giorni chiusi saranno automaticamente disabilitati nel wizard di prenotazione online.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setWorkingHours((prev) =>
+                      prev.map((d) =>
+                        d.isOpen
+                          ? { ...d, openTime: "09:00", closeTime: "19:30", hasBreak: true, breakStart: "13:00", breakEnd: "14:00" }
+                          : d
+                      )
+                    );
+                  }}
+                  className="px-3 py-1.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 text-xs font-semibold rounded-lg transition shrink-0 self-start sm:self-auto cursor-pointer"
+                >
+                  ⚡ Orario Standard (09:00 - 19:30)
+                </button>
+              </div>
+
+              {/* Elenco 7 Giorni della Settimana */}
+              <div className="space-y-3">
+                {workingHours.map((schedule, idx) => {
+                  return (
+                    <div
+                      key={schedule.dayOfWeek}
+                      className={`p-4 rounded-xl border transition-all ${
+                        schedule.isOpen
+                          ? "bg-white border-zinc-200 shadow-2xs"
+                          : "bg-zinc-50/70 border-zinc-200/50 opacity-75"
+                      }`}
+                    >
+                      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+                        {/* Nome Giorno & Toggle Apertura */}
+                        <div className="flex items-center gap-3 min-w-[160px]">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const updated = [...workingHours];
+                              updated[idx] = { ...schedule, isOpen: !schedule.isOpen };
+                              setWorkingHours(updated);
+                            }}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                              schedule.isOpen
+                                ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
+                                : "bg-zinc-200 text-zinc-600 border border-zinc-300"
+                            }`}
+                          >
+                            <span className={`w-2 h-2 rounded-full ${schedule.isOpen ? "bg-emerald-600" : "bg-zinc-400"}`} />
+                            {schedule.isOpen ? "Aperto" : "Chiuso"}
+                          </button>
+                          <span className={`text-sm font-bold ${schedule.isOpen ? "text-zinc-900" : "text-zinc-400 line-through"}`}>
+                            {schedule.dayName}
+                          </span>
+                        </div>
+
+                        {/* Configurazione Orari (se aperto) */}
+                        {schedule.isOpen ? (
+                          <div className="flex flex-wrap items-center gap-3 text-xs text-zinc-600">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-zinc-400 font-medium">Orario:</span>
+                              <input
+                                type="time"
+                                value={schedule.openTime}
+                                onChange={(e) => {
+                                  const updated = [...workingHours];
+                                  updated[idx] = { ...schedule, openTime: e.target.value };
+                                  setWorkingHours(updated);
+                                }}
+                                className="px-2 py-1 bg-zinc-50 border border-zinc-200 rounded-md font-mono text-zinc-800 font-semibold focus:outline-none focus:border-zinc-900"
+                              />
+                              <span>-</span>
+                              <input
+                                type="time"
+                                value={schedule.closeTime}
+                                onChange={(e) => {
+                                  const updated = [...workingHours];
+                                  updated[idx] = { ...schedule, closeTime: e.target.value };
+                                  setWorkingHours(updated);
+                                }}
+                                className="px-2 py-1 bg-zinc-50 border border-zinc-200 rounded-md font-mono text-zinc-800 font-semibold focus:outline-none focus:border-zinc-900"
+                              />
+                            </div>
+
+                            {/* Pausa Pranzo */}
+                            <div className="flex items-center gap-2 pl-2 border-l border-zinc-200">
+                              <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                                <input
+                                  type="checkbox"
+                                  checked={Boolean(schedule.hasBreak)}
+                                  onChange={(e) => {
+                                    const updated = [...workingHours];
+                                    updated[idx] = {
+                                      ...schedule,
+                                      hasBreak: e.target.checked,
+                                      breakStart: schedule.breakStart || "13:00",
+                                      breakEnd: schedule.breakEnd || "14:00"
+                                    };
+                                    setWorkingHours(updated);
+                                  }}
+                                  className="rounded border-zinc-300 text-zinc-900 focus:ring-0 cursor-pointer"
+                                />
+                                <span className="font-medium text-zinc-500">Pausa pranzo</span>
+                              </label>
+
+                              {schedule.hasBreak && (
+                                <div className="flex items-center gap-1">
+                                  <input
+                                    type="time"
+                                    value={schedule.breakStart || "13:00"}
+                                    onChange={(e) => {
+                                      const updated = [...workingHours];
+                                      updated[idx] = { ...schedule, breakStart: e.target.value };
+                                      setWorkingHours(updated);
+                                    }}
+                                    className="px-2 py-1 bg-zinc-50 border border-zinc-200 rounded-md font-mono text-xs text-zinc-800"
+                                  />
+                                  <span>-</span>
+                                  <input
+                                    type="time"
+                                    value={schedule.breakEnd || "14:00"}
+                                    onChange={(e) => {
+                                      const updated = [...workingHours];
+                                      updated[idx] = { ...schedule, breakEnd: e.target.value };
+                                      setWorkingHours(updated);
+                                    }}
+                                    className="px-2 py-1 bg-zinc-50 border border-zinc-200 rounded-md font-mono text-xs text-zinc-800"
+                                  />
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="text-xs text-zinc-400 italic">
+                            Chiusura settimanale (nessun appuntamento prenotabile)
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Pulsante Salvataggio Orari */}
+              <div className="pt-4 border-t border-zinc-100 flex items-center justify-between">
+                {hoursSaveMessage ? (
+                  <span className={`text-xs font-semibold ${hoursSaveMessage.includes("Errore") ? "text-rose-600" : "text-emerald-600"}`}>
+                    {hoursSaveMessage}
+                  </span>
+                ) : <span />}
+
+                <button
+                  type="button"
+                  onClick={handleSaveWorkingHours}
+                  disabled={savingHours}
+                  className="flex items-center gap-2 px-5 py-2.5 bg-zinc-900 hover:bg-zinc-800 text-white text-sm font-semibold rounded-lg transition disabled:opacity-50 cursor-pointer shadow-xs"
+                >
+                  {savingHours ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                  <span>Salva Orari di Lavoro</span>
                 </button>
               </div>
             </div>

@@ -168,3 +168,4 @@ export default function SyncBanner({ tenantId }: SyncBannerProps) {
     </div>
   );
 }
+
