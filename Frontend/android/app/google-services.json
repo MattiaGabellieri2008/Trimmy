@@ -1,0 +1,46 @@
+{
+  "project_info": {
+    "project_number": "274369523001",
+    "project_id": "gestionale-saloni",
+    "storage_bucket": "gestionale-saloni.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:274369523001:android:1ccb0eebdef8351877cce8",
+        "android_client_info": {
+          "package_name": "com.trimmy.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "274369523001-2piskemepmkbpq8arnuqrafih0s408lq.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBkrpOsBcr0F3RYoT-FInyFUaqpN3KkBZ0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "274369523001-2piskemepmkbpq8arnuqrafih0s408lq.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "274369523001-b4j8gqqp9c4q8gsopn0lfsfi5vv266f4.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.trimmy.app"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -1,3 +1,5 @@
+import 'package:firebase_core/firebase_core.dart';
+import 'firebase_options.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/date_symbol_data_local.dart';
@@ -16,6 +18,15 @@ import 'ui/salon/salon_main_screen.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await initializeDateFormatting('it_IT', null);
+
+  // Inizializzazione ufficiale Firebase (iOS, Android, Web)
+  try {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+  } catch (e) {
+    debugPrint('Inizializzazione Firebase: $e');
+  }
 
   // Inizializza ApiClient con il token salvato su disco
   await ApiClient().init();
