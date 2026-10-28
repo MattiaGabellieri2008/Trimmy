@@ -2,7 +2,7 @@
 
 import { useState, useEffect, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { Settings, Shield, CreditCard, Building, User, Mail, Lock, Plus, Check, X, Loader2, LogOut, Trash2, AlertTriangle, Users, Copy, RotateCw, MessageSquare, Smartphone, Send, Clock, Star, BellRing, Sparkles, Share2, Palette, Sun, Moon, Laptop, Paintbrush } from "lucide-react";
+import { Settings, Shield, CreditCard, Building, User, Mail, Lock, Plus, Check, X, Loader2, LogOut, Trash2, AlertTriangle, Users, Copy, RotateCw, MessageSquare, Smartphone, Send, Clock, Star, BellRing, Sparkles, Share2, Palette, Sun, Moon, Laptop, Paintbrush, Award, Ticket, Gift, Coins, Percent } from "lucide-react";
 import { useTheme } from "@/components/ThemeProvider";
 import { BRAND_PALETTES, BrandPalette, ThemeMode } from "@/lib/theme-store";
 import { auth } from "@/lib/firebase";
@@ -42,7 +42,18 @@ import {
   DEFAULT_WORKING_HOURS 
 } from "@/lib/working-hours-store";
 
-type TabType = "profilo" | "salone" | "brand" | "orari" | "team" | "notifiche" | "abbonamento";
+import {
+  fetchSalonLoyaltySettings,
+  saveSalonLoyaltySettings,
+  fetchSalonTreatmentPackages,
+  saveSalonTreatmentPackage,
+  deleteSalonTreatmentPackage,
+  LoyaltySettings,
+  DEFAULT_LOYALTY_SETTINGS,
+  TreatmentPackage
+} from "@/lib/fidelity-store";
+
+type TabType = "profilo" | "salone" | "brand" | "orari" | "team" | "notifiche" | "fidelity" | "abbonamento";
 
 function ImpostazioniContent() {
   const searchParams = useSearchParams();
@@ -164,6 +175,96 @@ function ImpostazioniContent() {
       console.warn("Nota caricamento impostazioni notifiche:", e);
     } finally {
       setIsLoadingNotifs(false);
+    }
+  };
+
+  // Fidelity & Pacchetti State (Modulo B7)
+  const [loyaltySettings, setLoyaltySettings] = useState<LoyaltySettings>(DEFAULT_LOYALTY_SETTINGS);
+  const [treatmentPackages, setTreatmentPackages] = useState<TreatmentPackage[]>([]);
+  const [savingFidelity, setSavingFidelity] = useState(false);
+  const [fidelitySaveMsg, setFidelitySaveMsg] = useState("");
+  const [newPkgModalOpen, setNewPkgModalOpen] = useState(false);
+  const [newPkgName, setNewPkgName] = useState("");
+  const [newPkgServiceName, setNewPkgServiceName] = useState("");
+  const [newPkgSessions, setNewPkgSessions] = useState(6);
+  const [newPkgPrice, setNewPkgPrice] = useState(110);
+  const [newPkgValidityDays, setNewPkgValidityDays] = useState(180);
+  const [isSavingPkg, setIsSavingPkg] = useState(false);
+
+  const loadFidelityData = async (tid: string) => {
+    try {
+      const [settings, pkgs] = await Promise.all([
+        fetchSalonLoyaltySettings(tid),
+        fetchSalonTreatmentPackages(tid)
+      ]);
+      setLoyaltySettings(settings);
+      setTreatmentPackages(pkgs);
+    } catch (e) {
+      console.warn("Nota caricamento fidelity in impostazioni:", e);
+    }
+  };
+
+  const handleSaveFidelitySettings = async () => {
+    if (!currentUser) return;
+    setSavingFidelity(true);
+    setFidelitySaveMsg("");
+    try {
+      const tid = getSalonTenantId(currentUser.uid);
+      await saveSalonLoyaltySettings(tid, loyaltySettings);
+      setFidelitySaveMsg("Regole Fidelity salvate con successo!");
+      setTimeout(() => setFidelitySaveMsg(""), 3500);
+    } catch (err: any) {
+      console.error("Errore salvataggio fidelity:", err);
+      setFidelitySaveMsg("Errore durante il salvataggio delle regole fidelity.");
+    } finally {
+      setSavingFidelity(false);
+    }
+  };
+
+  const handleCreatePackage = async () => {
+    if (!currentUser || !newPkgName.trim() || !newPkgServiceName.trim()) return;
+    setIsSavingPkg(true);
+    try {
+      const tid = getSalonTenantId(currentUser.uid);
+      const pkgId = `pkg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      const newPkg: TreatmentPackage = {
+        id: pkgId,
+        salonId: tid,
+        name: newPkgName.trim(),
+        serviceId: `srv-${newPkgServiceName.toLowerCase().replace(/\s+/g, "-")}`,
+        serviceName: newPkgServiceName.trim(),
+        totalSessions: Math.max(2, Number(newPkgSessions) || 6),
+        price: Math.max(0, Number(newPkgPrice) || 0),
+        validityDays: Math.max(30, Number(newPkgValidityDays) || 180),
+        isActive: true,
+        createdAt: new Date().toISOString()
+      };
+
+      await saveSalonTreatmentPackage(tid, newPkg);
+      const updated = await fetchSalonTreatmentPackages(tid);
+      setTreatmentPackages(updated);
+      setNewPkgName("");
+      setNewPkgServiceName("");
+      setNewPkgSessions(6);
+      setNewPkgPrice(110);
+      setNewPkgValidityDays(180);
+      setNewPkgModalOpen(false);
+    } catch (err) {
+      console.error("Errore creazione pacchetto trattamenti:", err);
+    } finally {
+      setIsSavingPkg(false);
+    }
+  };
+
+  const handleDeletePackage = async (packageId: string) => {
+    if (!currentUser) return;
+    if (!confirm("Sei sicuro di voler eliminare questo pacchetto dal catalogo?")) return;
+    try {
+      const tid = getSalonTenantId(currentUser.uid);
+      await deleteSalonTreatmentPackage(tid, packageId);
+      setTreatmentPackages((prev) => prev.filter((p) => p.id !== packageId));
+    } catch (err) {
+      console.error("Errore eliminazione pacchetto:", err);
     }
   };
 
@@ -329,6 +430,9 @@ function ImpostazioniContent() {
 
         // Carica impostazioni e log notifiche Firebase Cloud Messaging (FCM)
         loadNotificationData(tid).catch(console.error);
+
+        // Carica impostazioni fidelity e pacchetti
+        loadFidelityData(tid).catch(console.error);
 
         // Carica orari di apertura del salone
         fetchSalonWorkingHours(tid).then((hours) => {
@@ -629,6 +733,16 @@ function ImpostazioniContent() {
             >
               <BellRing className="w-4 h-4 text-indigo-600" />
               Notifiche Push (FCM)
+            </button>
+            <button
+              onClick={() => {
+                setActiveTab("fidelity");
+                if (currentUser) loadFidelityData(getSalonTenantId(currentUser.uid));
+              }}
+              className={`flex items-center gap-2 sm:gap-3 px-3.5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors text-left shrink-0 whitespace-nowrap ${activeTab === "fidelity" ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-white font-semibold border-l-2 border-brand" : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-50 dark:hover:bg-zinc-800"}`}
+            >
+              <Award className="w-4 h-4 text-amber-500" />
+              Fidelity & Pacchetti
             </button>
             <button
               onClick={() => setActiveTab("abbonamento")}
@@ -1977,6 +2091,361 @@ function ImpostazioniContent() {
                   </div>
                 )}
               </div>
+            </div>
+          )}
+
+
+          {/* TAB: FIDELITY & PACCHETTI (MODULO B7) */}
+          {activeTab === "fidelity" && (
+            <div className="space-y-8 animate-in fade-in duration-300">
+              {/* Header Tab */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-zinc-200/60 dark:border-zinc-800">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="p-1.5 rounded-lg bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border border-amber-200/60 dark:border-amber-800/60">
+                      <Award className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+                    </span>
+                    <h3 className="text-lg font-bold text-zinc-900 dark:text-white tracking-tight">
+                      Fidelity Club & Pacchetti Trattamenti
+                    </h3>
+                  </div>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+                    Definisci il valore economico dei punti fedeltà, le soglie minime di riscatto al POS e gestisci i carnet prepagati (5+1, Barba Ritual).
+                  </p>
+                </div>
+
+                <button
+                  onClick={handleSaveFidelitySettings}
+                  disabled={savingFidelity}
+                  className="px-4 py-2.5 rounded-xl bg-zinc-900 dark:bg-zinc-100 hover:bg-zinc-800 dark:hover:bg-white text-white dark:text-zinc-900 text-xs font-bold flex items-center gap-2 transition-all cursor-pointer shadow-xs disabled:opacity-50 self-start sm:self-auto"
+                >
+                  {savingFidelity ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Salvataggio...
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-4 h-4 text-emerald-500" />
+                      Salva Regole Fidelity
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {fidelitySaveMsg && (
+                <div className="p-3.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 text-xs font-semibold border border-emerald-200 dark:border-emerald-800/60 flex items-center gap-2 animate-in fade-in">
+                  <Check className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                  {fidelitySaveMsg}
+                </div>
+              )}
+
+              {/* CARD 1: Configurazione Motore Punti & Riscatto */}
+              <div className="bg-zinc-50/70 dark:bg-zinc-800/40 p-5 sm:p-6 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 space-y-6">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <h4 className="text-sm font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+                      <Coins className="w-4 h-4 text-amber-500" />
+                      Regole di Raccolta & Riscatto Punti al Checkout POS
+                    </h4>
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
+                      I punti vengono calcolati automaticamente durante ogni incasso al banco cassa e accreditati al cliente.
+                    </p>
+                  </div>
+
+                  <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                    <span className="text-xs font-bold text-zinc-700 dark:text-zinc-300">
+                      {loyaltySettings.enabled ? "Fidelity Attivo" : "Fidelity Disattivato"}
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={loyaltySettings.enabled}
+                      onChange={(e) => setLoyaltySettings({ ...loyaltySettings, enabled: e.target.checked })}
+                      className="w-4 h-4 rounded text-zinc-900 accent-zinc-900 focus:ring-0 cursor-pointer"
+                    />
+                  </label>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
+                  {/* Rapporto Punti per Euro */}
+                  <div className="bg-white dark:bg-zinc-900 p-4 rounded-xl border border-zinc-200 dark:border-zinc-800">
+                    <label className="block text-[11px] font-bold text-zinc-700 dark:text-zinc-300 uppercase tracking-wider mb-1.5">
+                      Accredito Punti per Spesa
+                    </label>
+                    <select
+                      value={String(loyaltySettings.pointsPerEuro)}
+                      onChange={(e) => setLoyaltySettings({ ...loyaltySettings, pointsPerEuro: Number(e.target.value) })}
+                      className="w-full text-xs font-semibold bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-white rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-zinc-900"
+                    >
+                      <option value="0.05">1 punto ogni 20€ spesi (0.05 pt/€)</option>
+                      <option value="0.1">1 punto ogni 10€ spesi (0.1 pt/€ - Standard)</option>
+                      <option value="0.2">2 punti ogni 10€ spesi (0.2 pt/€)</option>
+                      <option value="0.5">1 punto ogni 2€ spesi (0.5 pt/€)</option>
+                      <option value="1">1 punto per ogni 1€ speso (1.0 pt/€)</option>
+                    </select>
+                    <p className="text-[10px] text-zinc-400 mt-1.5">
+                      Calcolato sull&apos;importo netto pagato in cassa (esclusi sconti).
+                    </p>
+                  </div>
+
+                  {/* Valore in Euro di 1 Punto */}
+                  <div className="bg-white dark:bg-zinc-900 p-4 rounded-xl border border-zinc-200 dark:border-zinc-800">
+                    <label className="block text-[11px] font-bold text-zinc-700 dark:text-zinc-300 uppercase tracking-wider mb-1.5">
+                      Valore Sconto per Punto (€)
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-2.5 text-xs text-zinc-400 font-bold">€</span>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0.01"
+                        max="10"
+                        value={loyaltySettings.euroValuePerPoint}
+                        onChange={(e) => setLoyaltySettings({ ...loyaltySettings, euroValuePerPoint: Math.max(0.01, Number(e.target.value) || 0.10) })}
+                        className="w-full pl-7 text-xs font-semibold bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-white rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-zinc-900"
+                      />
+                    </div>
+                    <p className="text-[10px] text-zinc-400 mt-1.5">
+                      Es. €0.10 significa che 50 punti valgono €5.00 di sconto immediato.
+                    </p>
+                  </div>
+
+                  {/* Soglia Minima di Riscatto */}
+                  <div className="bg-white dark:bg-zinc-900 p-4 rounded-xl border border-zinc-200 dark:border-zinc-800">
+                    <label className="block text-[11px] font-bold text-zinc-700 dark:text-zinc-300 uppercase tracking-wider mb-1.5">
+                      Soglia Minima Riscatto
+                    </label>
+                    <input
+                      type="number"
+                      step="5"
+                      min="10"
+                      max="1000"
+                      value={loyaltySettings.minPointsToRedeem}
+                      onChange={(e) => setLoyaltySettings({ ...loyaltySettings, minPointsToRedeem: Math.max(10, Number(e.target.value) || 50) })}
+                      className="w-full text-xs font-semibold bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-white rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-zinc-900"
+                    />
+                    <p className="text-[10px] text-zinc-400 mt-1.5">
+                      Punti minimi che il cliente deve accumulare prima di poterli spendere.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Simulatore di Anteprima Calcolo */}
+                <div className="p-4 rounded-xl bg-amber-50/60 dark:bg-amber-950/20 border border-amber-200/60 dark:border-amber-800/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                  <div className="flex items-start gap-2.5">
+                    <Sparkles className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-bold text-zinc-900 dark:text-zinc-100">
+                        Anteprima calcolo cliente:
+                      </span>
+                      <p className="text-zinc-600 dark:text-zinc-300 mt-0.5">
+                        Spesa di <strong>100€</strong> al POS ➔ Accredita <strong>{Math.floor(100 * loyaltySettings.pointsPerEuro)} punti</strong>.
+                        Riscatto di <strong>{loyaltySettings.minPointsToRedeem} punti</strong> ➔ Sconto immediato di <strong>€{(loyaltySettings.minPointsToRedeem * loyaltySettings.euroValuePerPoint).toFixed(2)}</strong> al banco cassa.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="shrink-0 px-3 py-1.5 rounded-lg bg-white dark:bg-zinc-900 border border-amber-200 dark:border-amber-800 text-[11px] font-bold text-amber-700 dark:text-amber-400 font-mono">
+                    100 pt = €{(100 * loyaltySettings.euroValuePerPoint).toFixed(2)}
+                  </div>
+                </div>
+              </div>
+
+              {/* CARD 2: Catalogo Pacchetti & Carnet Prepagati (5+1) */}
+              <div className="bg-white dark:bg-zinc-900 p-5 sm:p-6 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <h4 className="text-sm font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+                      <Ticket className="w-4 h-4 text-indigo-600" />
+                      Catalogo Carnet & Pacchetti Prepagati
+                    </h4>
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
+                      Crea pacchetti a sedute (es. <em>5 Piega + 1 Omaggio</em>) vendibili al POS o assegnabili direttamente dalla scheda anagrafica clienti.
+                    </p>
+                  </div>
+
+                  <button
+                    onClick={() => setNewPkgModalOpen(true)}
+                    className="px-3.5 py-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer self-start sm:self-auto"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Nuovo Pacchetto / Carnet
+                  </button>
+                </div>
+
+                {treatmentPackages.length === 0 ? (
+                  <div className="p-8 text-center rounded-xl bg-zinc-50 dark:bg-zinc-800/40 border border-dashed border-zinc-200 dark:border-zinc-700">
+                    <Ticket className="w-8 h-8 text-zinc-400 mx-auto mb-2" />
+                    <p className="text-xs font-bold text-zinc-700 dark:text-zinc-300">
+                      Nessun pacchetto o carnet configurato
+                    </p>
+                    <p className="text-[11px] text-zinc-500 mt-1">
+                      Clicca su &quot;Nuovo Pacchetto / Carnet&quot; per iniziare a vendere trattamenti prepagati con sedute a scalare.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pt-2">
+                    {treatmentPackages.map((pkg) => (
+                      <div
+                        key={pkg.id}
+                        className="p-4 rounded-xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700/80 hover:border-zinc-300 dark:hover:border-zinc-600 transition-all flex flex-col justify-between"
+                      >
+                        <div>
+                          <div className="flex items-start justify-between gap-2">
+                            <span className="text-[10px] font-extrabold uppercase tracking-wider text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 px-2 py-0.5 rounded-md border border-indigo-200/60 dark:border-indigo-800">
+                              {pkg.totalSessions} Sedute
+                            </span>
+                            <button
+                              onClick={() => handleDeletePackage(pkg.id)}
+                              className="text-zinc-400 hover:text-rose-600 p-1 rounded-md hover:bg-zinc-200/50 dark:hover:bg-zinc-700/50 transition-colors cursor-pointer"
+                              title="Elimina pacchetto dal catalogo"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+
+                          <h5 className="text-sm font-bold text-zinc-900 dark:text-zinc-100 mt-2">
+                            {pkg.name}
+                          </h5>
+                          <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
+                            Trattamento: <span className="font-semibold text-zinc-700 dark:text-zinc-300">{pkg.serviceName}</span>
+                          </p>
+                        </div>
+
+                        <div className="mt-4 pt-3 border-t border-zinc-200/70 dark:border-zinc-700/70 flex items-center justify-between text-xs">
+                          <div>
+                            <span className="text-[10px] text-zinc-400 block uppercase">Prezzo Vendita</span>
+                            <span className="font-extrabold text-sm text-zinc-900 dark:text-white font-mono">
+                              €{Number(pkg.price).toFixed(2)}
+                            </span>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-[10px] text-zinc-400 block uppercase">Validità</span>
+                            <span className="text-zinc-600 dark:text-zinc-400 font-medium">
+                              {pkg.validityDays} giorni
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* MODAL CREAZIONE NUOVO PACCHETTO / CARNET */}
+              {newPkgModalOpen && (
+                <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+                  <div className="bg-white dark:bg-zinc-900 rounded-2xl max-w-md w-full p-6 shadow-2xl border border-zinc-200 dark:border-zinc-800 animate-in fade-in zoom-in-95 duration-200 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Ticket className="w-5 h-5 text-indigo-600" />
+                        <h4 className="text-base font-bold text-zinc-900 dark:text-white">
+                          Nuovo Pacchetto / Carnet
+                        </h4>
+                      </div>
+                      <button
+                        onClick={() => setNewPkgModalOpen(false)}
+                        className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 p-1"
+                      >
+                        <X className="w-5 h-5" />
+                      </button>
+                    </div>
+
+                    <div className="space-y-3 text-xs">
+                      <div>
+                        <label className="block font-bold text-zinc-700 dark:text-zinc-300 uppercase tracking-wider mb-1">
+                          Nome Pacchetto *
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="es. Carnet Piega 5 + 1 Omaggio"
+                          value={newPkgName}
+                          onChange={(e) => setNewPkgName(e.target.value)}
+                          className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl p-2.5 outline-none focus:ring-2 focus:ring-zinc-900 text-zinc-900 dark:text-white font-medium"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block font-bold text-zinc-700 dark:text-zinc-300 uppercase tracking-wider mb-1">
+                          Nome Trattamento / Servizio Collegato *
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="es. Piega & Styling Glamour, Taglio Uomo, Barba..."
+                          value={newPkgServiceName}
+                          onChange={(e) => setNewPkgServiceName(e.target.value)}
+                          className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl p-2.5 outline-none focus:ring-2 focus:ring-zinc-900 text-zinc-900 dark:text-white font-medium"
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-3">
+                        <div>
+                          <label className="block font-bold text-zinc-700 dark:text-zinc-300 uppercase tracking-wider mb-1">
+                            Sedute Totali
+                          </label>
+                          <input
+                            type="number"
+                            min="2"
+                            max="50"
+                            value={newPkgSessions}
+                            onChange={(e) => setNewPkgSessions(Number(e.target.value))}
+                            className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl p-2.5 outline-none text-zinc-900 dark:text-white font-bold text-center"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block font-bold text-zinc-700 dark:text-zinc-300 uppercase tracking-wider mb-1">
+                            Prezzo (€)
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="5"
+                            value={newPkgPrice}
+                            onChange={(e) => setNewPkgPrice(Number(e.target.value))}
+                            className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl p-2.5 outline-none text-zinc-900 dark:text-white font-bold text-center"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block font-bold text-zinc-700 dark:text-zinc-300 uppercase tracking-wider mb-1">
+                            Validità (gg)
+                          </label>
+                          <input
+                            type="number"
+                            min="30"
+                            step="30"
+                            value={newPkgValidityDays}
+                            onChange={(e) => setNewPkgValidityDays(Number(e.target.value))}
+                            className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl p-2.5 outline-none text-zinc-900 dark:text-white font-bold text-center"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="pt-3 border-t border-zinc-200 dark:border-zinc-800 flex items-center justify-end gap-2">
+                      <button
+                        onClick={() => setNewPkgModalOpen(false)}
+                        className="px-4 py-2 rounded-xl text-xs font-semibold text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                      >
+                        Annulla
+                      </button>
+                      <button
+                        onClick={handleCreatePackage}
+                        disabled={isSavingPkg || !newPkgName.trim() || !newPkgServiceName.trim()}
+                        className="px-4 py-2 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white transition-colors disabled:opacity-50 flex items-center gap-1.5 shadow-sm"
+                      >
+                        {isSavingPkg ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Plus className="w-4 h-4" />
+                        )}
+                        Crea Pacchetto
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

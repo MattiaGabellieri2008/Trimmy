@@ -13,17 +13,30 @@ import { getSalonTenantId } from "./tenant-helper";
 import { updateSalonAppointmentStatus } from "./appointments-service";
 import { addSalonNotification } from "./salon-notifications";
 import { decrementStockForCheckout } from "./inventory-store";
+import { 
+  awardLoyaltyPoints, 
+  redeemLoyaltyPoints, 
+  useCustomerPackageSession, 
+  assignCustomerPackage, 
+  TreatmentPackage 
+} from "./fidelity-store";
 
 export type PaymentMethod = "CASH" | "CARD" | "MIXED" | "SATISPAY" | "VOUCHER";
 
 export interface CheckoutItem {
   id: string;
-  type: "SERVICE" | "PRODUCT";
+  type: "SERVICE" | "PRODUCT" | "PACKAGE";
   name: string;
   price: number;
   quantity: number;
   operatorId?: string;
   operatorName?: string;
+  packageDetails?: {
+    totalSessions: number;
+    validityDays: number;
+    serviceId: string;
+    serviceName: string;
+  };
 }
 
 export interface CheckoutTransaction {
@@ -51,6 +64,15 @@ export interface CheckoutTransaction {
   taxRate?: number; // es. 22%
   operatorName?: string;
   issuedAt: string; // ISO
+  // Dati Fidelity & Carnet
+  loyaltyPointsEarned?: number;
+  loyaltyPointsRedeemed?: number;
+  loyaltyDiscountEuro?: number;
+  packageSessionUsed?: {
+    customerPackageId: string;
+    packageName: string;
+    remainingAfter: number;
+  };
 }
 
 export interface DailyCashClosing {
@@ -138,10 +160,66 @@ export async function saveCheckoutTransaction(
     console.warn("Nota scarico magazzino per transazione:", e);
   }
 
+  // 3.6 Gestione Fidelity Punti & Pacchetti Trattamenti (B7)
+  const effectiveCid = normalized.customerId || (normalized.customerPhone ? `phone-${normalized.customerPhone.replace(/[^0-9]/g, "")}` : null);
+  if (effectiveCid) {
+    // A. Riscatto punti se applicato sconto in cassa
+    if (normalized.loyaltyPointsRedeemed && normalized.loyaltyPointsRedeemed > 0) {
+      try {
+        await redeemLoyaltyPoints(tid, effectiveCid, normalized.loyaltyPointsRedeemed, normalized.id);
+      } catch (e) {
+        console.warn("Nota riscatto punti loyalty cassa:", e);
+      }
+    }
+
+    // B. Scalamento seduta da Carnet se applicata
+    if (normalized.packageSessionUsed?.customerPackageId) {
+      try {
+        await useCustomerPackageSession(tid, normalized.packageSessionUsed.customerPackageId, normalized.id);
+      } catch (e) {
+        console.warn("Nota utilizzo seduta pacchetto cassa:", e);
+      }
+    }
+
+    // C. Vendita e attivazione istantanea di nuovi pacchetti nel carrello
+    for (const it of normalized.items) {
+      if (it.type === "PACKAGE" && it.packageDetails) {
+        try {
+          const pkgItem: TreatmentPackage = {
+            id: it.id,
+            salonId: tid,
+            name: it.name,
+            serviceId: it.packageDetails.serviceId,
+            serviceName: it.packageDetails.serviceName,
+            totalSessions: it.packageDetails.totalSessions,
+            price: it.price,
+            validityDays: it.packageDetails.validityDays || 180,
+            isActive: true,
+            createdAt: new Date().toISOString()
+          };
+          await assignCustomerPackage(tid, effectiveCid, normalized.customerName, pkgItem, normalized.id);
+        } catch (e) {
+          console.warn("Nota attivazione pacchetto cliente:", e);
+        }
+      }
+    }
+
+    // D. Accredito automatico nuovi punti sul totale effettivo pagato
+    if (normalized.finalAmount > 0) {
+      try {
+        const { earned } = await awardLoyaltyPoints(tid, effectiveCid, normalized.finalAmount, normalized.id, `Incasso #${normalized.receiptNumber}`);
+        normalized.loyaltyPointsEarned = earned;
+      } catch (e) {
+        console.warn("Nota accredito punti loyalty cassa:", e);
+      }
+    }
+  }
+
   // 4. Invia notifica di sistema per il salone
+  const fidelityInfo = normalized.loyaltyPointsEarned ? ` (+${normalized.loyaltyPointsEarned} pt)` : "";
   addSalonNotification(tid, {
     id: `notif-cassa-${normalized.id}`,
-    title: `Incasso Registrato: €${normalized.finalAmount.toFixed(2)} 🧾`,
+    title: `Incasso Registrato: €${normalized.finalAmount.toFixed(2)}${fidelityInfo} 🧾`,
     description: `Incasso #${normalized.receiptNumber} da ${normalized.customerName} via ${normalized.paymentMethod}.`,
     time: "Adesso",
     type: "system",

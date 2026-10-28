@@ -12,12 +12,13 @@ import {
   Sparkles, 
   X,
   ChevronRight,
-  ShieldCheck
+  ShieldCheck,
+  Award
 } from "lucide-react";
 import { ClientAppointmentItem, SalonListing } from "@/lib/client-booking";
 import { parseDateSafe } from "@/lib/date-utils";
 
-export type ClientTabType = "marketplace" | "appuntamenti" | "preferiti" | "profilo";
+export type ClientTabType = "marketplace" | "appuntamenti" | "preferiti" | "fidelity" | "profilo";
 
 interface ClientSidebarProps {
   activeTab: ClientTabType;
@@ -63,6 +64,12 @@ export function ClientSidebar({
       label: "Saloni Preferiti",
       icon: Heart,
       badge: favoritesCount > 0 ? String(favoritesCount) : null
+    },
+    {
+      id: "fidelity" as ClientTabType,
+      label: "Tessera & Fidelity",
+      icon: Award,
+      badge: "VIP"
     },
     {
       id: "profilo" as ClientTabType,

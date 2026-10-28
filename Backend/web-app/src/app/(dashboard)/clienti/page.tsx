@@ -2,42 +2,59 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { 
-  Plus, 
-  X, 
-  Phone, 
-  Mail, 
-  CalendarPlus, 
-  MessageCircle, 
-  Loader2, 
-  Calendar, 
-  Users, 
-  Trash2, 
-  CheckCircle2, 
+import {
+  Plus,
+  X,
+  Phone,
+  Mail,
+  CalendarPlus,
+  MessageCircle,
+  Loader2,
+  Calendar,
+  Users,
+  Trash2,
+  CheckCircle2,
   ShieldCheck,
   Clock,
   UserCheck,
   Scissors,
   ExternalLink,
-  AlertCircle
+  AlertCircle,
+  Award,
+  Gift,
+  Ticket,
+  Sparkles,
+  Edit3
 } from "lucide-react";
 import { dataConnect, auth } from "@/lib/firebase";
 import { onAuthStateChanged } from "firebase/auth";
 import { getSalonTenantId, ensureSalonTenant } from "@/lib/tenant-helper";
-import { 
-  listCustomers, 
-  createCustomer, 
+import {
+  CustomerLoyalty,
+  CustomerPackage,
+  TreatmentPackage,
+  fetchCustomerLoyalty,
+  fetchCustomerPackages,
+  fetchSalonTreatmentPackages,
+  assignCustomerPackage,
+  useCustomerPackageSession,
+  adjustCustomerPoints,
+  computeTier
+} from "@/lib/fidelity-store";
+import {
+  listCustomers,
+  createCustomer,
   getCustomerDetails,
-  ListCustomersData, 
-  GetCustomerDetailsData 
+  ListCustomersData,
+  GetCustomerDetailsData
 } from "../../../dataconnect-generated";
-import { 
-  fetchSalonCustomers, 
-  saveSalonCustomer, 
+import {
+  fetchSalonCustomers,
+  saveSalonCustomer,
   deleteSalonCustomer,
   normalizeCustomerPhone,
   normalizeCustomerEmail,
-  deduplicateCustomersList 
+  deduplicateCustomersList
 } from "@/lib/customers-store";
 import { fetchSalonServices, SalonServiceItem } from "@/lib/services-store";
 import { fetchSalonStaff, StaffMemberItem } from "@/lib/staff-store";
@@ -56,12 +73,12 @@ export default function ClientiPage() {
   const [salonTenantId, setSalonTenantId] = useState<string>("");
   const [customers, setCustomers] = useState<ListCustomersData["customers"]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  
+
   // Drawer states
   const [isNewDrawerOpen, setIsNewDrawerOpen] = useState(false);
   const [isDetailsDrawerOpen, setIsDetailsDrawerOpen] = useState(false);
   const [isBookingDrawerOpen, setIsBookingDrawerOpen] = useState(false);
-  
+
   // New Customer form
   const [formData, setFormData] = useState({
     firstName: "",
@@ -78,6 +95,14 @@ export default function ClientiPage() {
   const [isLoadingDetails, setIsLoadingDetails] = useState(false);
   const [isDeletingCustomer, setIsDeletingCustomer] = useState(false);
   const [actionMessage, setActionMessage] = useState<{ text: string; type: "success" | "info"; linkUrl?: string; linkLabel?: string } | null>(null);
+
+  // Fidelity & Carnet State
+  const [customerLoyalty, setCustomerLoyalty] = useState<CustomerLoyalty | null>(null);
+  const [customerPackages, setCustomerPackages] = useState<CustomerPackage[]>([]);
+  const [salonPackages, setSalonPackages] = useState<TreatmentPackage[]>([]);
+  const [isAdjustPointsOpen, setIsAdjustPointsOpen] = useState(false);
+  const [adjustPointsValue, setAdjustPointsValue] = useState<number>(0);
+  const [isAssignPackageOpen, setIsAssignPackageOpen] = useState(false);
 
   // Booking Drawer states & resources
   const [bookingCustomer, setBookingCustomer] = useState<{ id: string; firstName: string; lastName: string; phone: string; email?: string | null } | null>(null);
@@ -346,7 +371,7 @@ export default function ClientiPage() {
     if (!customerId || !salonTenantId) return;
     const targetCust = customers.find((c) => c.id === customerId);
     const name = targetCust ? `${targetCust.firstName} ${targetCust.lastName}` : "questo cliente";
-    
+
     if (!confirm(`Sei sicuro di voler eliminare l'anagrafica di ${name}? L'operazione non può essere annullata.`)) {
       return;
     }
@@ -393,6 +418,15 @@ export default function ClientiPage() {
           });
         }
       }
+
+      // Carica Dati Fidelity & Carnet per il cliente
+      fetchCustomerLoyalty(salonTenantId, customerId).then((l) => {
+        setCustomerLoyalty(l);
+        setAdjustPointsValue(l.pointsBalance);
+      }).catch(() => { });
+      fetchCustomerPackages(salonTenantId, customerId).then(setCustomerPackages).catch(() => { });
+      fetchSalonTreatmentPackages(salonTenantId).then(setSalonPackages).catch(() => { });
+
     } catch (e) {
       console.error(e);
       const found = customers.find((c) => c.id === customerId);
@@ -408,9 +442,51 @@ export default function ClientiPage() {
           technicalNotes: found.technicalNotes || null,
           pastAppointments: []
         });
+
+        fetchCustomerLoyalty(salonTenantId, customerId).then((l) => {
+          setCustomerLoyalty(l);
+          setAdjustPointsValue(l.pointsBalance);
+        }).catch(() => { });
+        fetchCustomerPackages(salonTenantId, customerId).then(setCustomerPackages).catch(() => { });
+        fetchSalonTreatmentPackages(salonTenantId).then(setSalonPackages).catch(() => { });
       }
     } finally {
       setIsLoadingDetails(false);
+    }
+  };
+
+  const handleSavePoints = async () => {
+    if (!selectedCustomer) return;
+    try {
+      const updated = await adjustCustomerPoints(salonTenantId, selectedCustomer.id, adjustPointsValue);
+      setCustomerLoyalty(updated);
+      setIsAdjustPointsOpen(false);
+    } catch (e) {
+      alert("Errore aggiornamento punti");
+    }
+  };
+
+  const handleAssignPkg = async (pkg: TreatmentPackage) => {
+    if (!selectedCustomer) return;
+    try {
+      const custName = `${selectedCustomer.firstName} ${selectedCustomer.lastName}`;
+      await assignCustomerPackage(salonTenantId, selectedCustomer.id, custName, pkg);
+      const updated = await fetchCustomerPackages(salonTenantId, selectedCustomer.id);
+      setCustomerPackages(updated);
+      setIsAssignPackageOpen(false);
+    } catch (e) {
+      alert("Errore assegnazione carnet");
+    }
+  };
+
+  const handleUsePackageSession = async (cpkgId: string) => {
+    if (!selectedCustomer) return;
+    try {
+      await useCustomerPackageSession(salonTenantId, cpkgId);
+      const updated = await fetchCustomerPackages(salonTenantId, selectedCustomer.id);
+      setCustomerPackages(updated);
+    } catch (e) {
+      alert("Errore scalamento seduta");
     }
   };
 
@@ -428,7 +504,7 @@ export default function ClientiPage() {
             Gestisci anagrafiche, storico e note tecniche • <span className="font-semibold text-zinc-700">{customers.length}</span> {customers.length === 1 ? "cliente registrato" : "clienti registrati"}
           </p>
         </div>
-        <button 
+        <button
           onClick={() => setIsNewDrawerOpen(true)}
           className="flex items-center gap-2 bg-zinc-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-zinc-800 transition-colors shadow-sm w-full sm:w-auto justify-center"
         >
@@ -439,16 +515,15 @@ export default function ClientiPage() {
 
       {/* FEEDBACK BANNER */}
       {actionMessage && (
-        <div className={`p-4 rounded-xl border flex items-center justify-between transition-all shadow-xs ${
-          actionMessage.type === "success" 
-            ? "bg-emerald-50 border-emerald-200 text-emerald-800" 
+        <div className={`p-4 rounded-xl border flex items-center justify-between transition-all shadow-xs ${actionMessage.type === "success"
+            ? "bg-emerald-50 border-emerald-200 text-emerald-800"
             : "bg-blue-50 border-blue-200 text-blue-800"
-        }`}>
+          }`}>
           <div className="flex items-center gap-2.5 text-sm font-medium flex-wrap">
             <CheckCircle2 className="w-4 h-4 shrink-0" />
             <span>{actionMessage.text}</span>
             {actionMessage.linkUrl && (
-              <Link 
+              <Link
                 href={actionMessage.linkUrl}
                 className="ml-2 inline-flex items-center gap-1 font-semibold underline text-emerald-950 hover:text-black"
               >
@@ -468,8 +543,8 @@ export default function ClientiPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {customers.map((customer) => (
-            <div 
-              key={customer.id} 
+            <div
+              key={customer.id}
               onClick={() => handleCustomerClick(customer.id)}
               className="bg-white border border-zinc-200/60 rounded-xl p-5 shadow-sm hover:shadow-md transition-all flex flex-col justify-between cursor-pointer group"
             >
@@ -485,7 +560,7 @@ export default function ClientiPage() {
                       </h3>
                       {customer.birthday && (
                         <div className="mt-1 text-[11px] font-medium text-zinc-500">
-                           Compleanno: {customer.birthday}
+                          Compleanno: {customer.birthday}
                         </div>
                       )}
                     </div>
@@ -502,7 +577,7 @@ export default function ClientiPage() {
                     <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
-                
+
                 <div className="space-y-1.5 mb-5">
                   <div className="flex items-center gap-2 text-[13px] text-zinc-600">
                     <Phone className="w-3.5 h-3.5 text-zinc-400" /> {customer.phone}
@@ -515,9 +590,9 @@ export default function ClientiPage() {
                 </div>
               </div>
               <div className="pt-4 border-t border-zinc-100 flex gap-2">
-                <button 
+                <button
                   type="button"
-                  className="flex-1 flex items-center justify-center gap-2 py-2 bg-zinc-900 text-white text-[13px] font-medium rounded-md hover:bg-zinc-800 transition-colors shadow-sm" 
+                  className="flex-1 flex items-center justify-center gap-2 py-2 bg-zinc-900 text-white text-[13px] font-medium rounded-md hover:bg-zinc-800 transition-colors shadow-sm"
                   onClick={(e) => {
                     e.stopPropagation();
                     handleOpenBooking({
@@ -532,10 +607,10 @@ export default function ClientiPage() {
                   <CalendarPlus className="w-4 h-4" /> Prenota
                 </button>
                 {customer.phone ? (
-                  <a 
+                  <a
                     href={`tel:${customer.phone}`}
-                    className="flex items-center justify-center p-2 text-zinc-700 bg-zinc-50 border border-zinc-200 rounded-md hover:bg-zinc-100 transition-colors shadow-2xs" 
-                    title={`Chiama ${customer.phone}`} 
+                    className="flex items-center justify-center p-2 text-zinc-700 bg-zinc-50 border border-zinc-200 rounded-md hover:bg-zinc-100 transition-colors shadow-2xs"
+                    title={`Chiama ${customer.phone}`}
                     onClick={(e) => e.stopPropagation()}
                   >
                     <Phone className="w-4 h-4" />
@@ -571,7 +646,7 @@ export default function ClientiPage() {
 
       {/* OVERLAY */}
       {(isNewDrawerOpen || isDetailsDrawerOpen || isBookingDrawerOpen) && (
-        <div 
+        <div
           className="fixed inset-0 bg-zinc-900/20 backdrop-blur-sm z-40 transition-opacity"
           onClick={() => {
             setIsNewDrawerOpen(false);
@@ -593,31 +668,31 @@ export default function ClientiPage() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-[13px] font-medium text-zinc-700 mb-1.5">Nome *</label>
-                <input value={formData.firstName} onChange={(e) => setFormData({...formData, firstName: e.target.value})} type="text" className="w-full border border-zinc-200 rounded-md px-3 py-2 text-sm focus:ring-1 focus:ring-zinc-900 outline-none" placeholder="Mario" />
+                <input value={formData.firstName} onChange={(e) => setFormData({ ...formData, firstName: e.target.value })} type="text" className="w-full border border-zinc-200 rounded-md px-3 py-2 text-sm focus:ring-1 focus:ring-zinc-900 outline-none" placeholder="Mario" />
               </div>
               <div>
                 <label className="block text-[13px] font-medium text-zinc-700 mb-1.5">Cognome *</label>
-                <input value={formData.lastName} onChange={(e) => setFormData({...formData, lastName: e.target.value})} type="text" className="w-full border border-zinc-200 rounded-md px-3 py-2 text-sm focus:ring-1 focus:ring-zinc-900 outline-none" placeholder="Rossi" />
+                <input value={formData.lastName} onChange={(e) => setFormData({ ...formData, lastName: e.target.value })} type="text" className="w-full border border-zinc-200 rounded-md px-3 py-2 text-sm focus:ring-1 focus:ring-zinc-900 outline-none" placeholder="Rossi" />
               </div>
             </div>
             <div>
               <label className="block text-[13px] font-medium text-zinc-700 mb-1.5">Telefono *</label>
-              <input value={formData.phone} onChange={(e) => setFormData({...formData, phone: e.target.value})} type="tel" className="w-full border border-zinc-200 rounded-md px-3 py-2 text-sm focus:ring-1 focus:ring-zinc-900 outline-none" placeholder="+39 000 0000000" />
+              <input value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} type="tel" className="w-full border border-zinc-200 rounded-md px-3 py-2 text-sm focus:ring-1 focus:ring-zinc-900 outline-none" placeholder="+39 000 0000000" />
             </div>
             <div>
               <label className="block text-[13px] font-medium text-zinc-700 mb-1.5">Email</label>
-              <input value={formData.email} onChange={(e) => setFormData({...formData, email: e.target.value})} type="email" className="w-full border border-zinc-200 rounded-md px-3 py-2 text-sm focus:ring-1 focus:ring-zinc-900 outline-none" placeholder="cliente@email.com" />
+              <input value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} type="email" className="w-full border border-zinc-200 rounded-md px-3 py-2 text-sm focus:ring-1 focus:ring-zinc-900 outline-none" placeholder="cliente@email.com" />
             </div>
           </div>
           <div className="border-t border-zinc-100 pt-6 space-y-4">
             <h3 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2">Dettagli Aggiuntivi</h3>
             <div>
               <label className="block text-[13px] font-medium text-zinc-700 mb-1.5">Compleanno</label>
-              <input value={formData.birthday} onChange={(e) => setFormData({...formData, birthday: e.target.value})} type="date" className="w-full border border-zinc-200 rounded-md px-3 py-2 text-sm text-zinc-700 focus:ring-1 focus:ring-zinc-900 outline-none" />
+              <input value={formData.birthday} onChange={(e) => setFormData({ ...formData, birthday: e.target.value })} type="date" className="w-full border border-zinc-200 rounded-md px-3 py-2 text-sm text-zinc-700 focus:ring-1 focus:ring-zinc-900 outline-none" />
             </div>
             <div>
               <label className="block text-[13px] font-medium text-zinc-700 mb-1.5">Note Tecniche (Formule, Preferenze)</label>
-              <textarea value={formData.technicalNotes} onChange={(e) => setFormData({...formData, technicalNotes: e.target.value})} rows={3} className="w-full border border-zinc-200 rounded-md px-3 py-2 text-sm focus:ring-1 focus:ring-zinc-900 outline-none resize-none" placeholder="Es. Tinta biondo cenere 8.1..."></textarea>
+              <textarea value={formData.technicalNotes} onChange={(e) => setFormData({ ...formData, technicalNotes: e.target.value })} rows={3} className="w-full border border-zinc-200 rounded-md px-3 py-2 text-sm focus:ring-1 focus:ring-zinc-900 outline-none resize-none" placeholder="Es. Tinta biondo cenere 8.1..."></textarea>
             </div>
           </div>
         </div>
@@ -636,7 +711,7 @@ export default function ClientiPage() {
           <h2 className="text-lg font-semibold text-zinc-900">Scheda Cliente</h2>
           <button onClick={() => setIsDetailsDrawerOpen(false)} className="text-zinc-400 hover:text-zinc-900 p-1 rounded-md hover:bg-zinc-50"><X className="w-5 h-5" /></button>
         </div>
-        
+
         <div className="flex-1 overflow-y-auto p-6">
           {isLoadingDetails || !selectedCustomer ? (
             <div className="flex justify-center mt-12"><Loader2 className="w-8 h-8 animate-spin text-zinc-400" /></div>
@@ -650,7 +725,7 @@ export default function ClientiPage() {
                 <div>
                   <h2 className="text-xl font-semibold text-zinc-900">{selectedCustomer.firstName} {selectedCustomer.lastName}</h2>
                   <div className="flex items-center gap-3 mt-1 text-sm text-zinc-500">
-                    <span className="flex items-center gap-1"><Phone className="w-3.5 h-3.5"/> {selectedCustomer.phone}</span>
+                    <span className="flex items-center gap-1"><Phone className="w-3.5 h-3.5" /> {selectedCustomer.phone}</span>
                   </div>
                   {selectedCustomer.phone && (
                     <div className="flex items-center gap-2 mt-2.5">
@@ -684,6 +759,132 @@ export default function ClientiPage() {
                   <p className="text-[11px] uppercase tracking-wider text-zinc-500 mb-1">Compleanno</p>
                   <p className="text-sm font-medium text-zinc-900">{selectedCustomer.birthday || "-"}</p>
                 </div>
+              </div>
+
+              {/* Box Fidelity Club & Punti Cliente */}
+              <div className="p-4 bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200/80 rounded-2xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-xl bg-amber-500 text-white flex items-center justify-center shadow-xs">
+                      <Award className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-1.5">
+                        <h4 className="text-sm font-bold text-amber-950">Fidelity Club</h4>
+                        {customerLoyalty && (
+                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase border ${computeTier(customerLoyalty.totalPointsEarned).badgeClass}`}>
+                            {computeTier(customerLoyalty.totalPointsEarned).label}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-amber-800">
+                        Punti spesa e sconti fedeltà riscattabili in cassa
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const input = window.prompt("Imposta nuovo saldo punti fedeltà:", String(customerLoyalty?.pointsBalance || 0));
+                      if (input !== null) {
+                        const parsed = parseInt(input, 10);
+                        if (!isNaN(parsed) && parsed >= 0) {
+                          handleSavePoints();
+                        }
+                      }
+                    }}
+                    className="p-1.5 text-amber-800 hover:bg-amber-200/60 rounded-lg transition-colors text-xs flex items-center gap-1 font-semibold"
+                    title="Regola punti manualmente"
+                  >
+                    <Edit3 className="w-3.5 h-3.5" />
+                    <span>Regola</span>
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 pt-1 border-t border-amber-200/60">
+                  <div className="bg-white/90 p-2.5 rounded-xl border border-amber-100">
+                    <span className="text-[10px] uppercase font-bold text-amber-700 block">Saldo Punti Attuale</span>
+                    <span className="text-xl font-black text-amber-950 font-mono">
+                      {customerLoyalty?.pointsBalance || 0} <span className="text-xs font-bold font-sans">pt</span>
+                    </span>
+                  </div>
+                  <div className="bg-white/90 p-2.5 rounded-xl border border-amber-100">
+                    <span className="text-[10px] uppercase font-bold text-amber-700 block">Valore Sconto in Cassa</span>
+                    <span className="text-xl font-black text-emerald-700 font-mono">
+                      €{((customerLoyalty?.pointsBalance || 0) * 0.10).toFixed(2)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Box Carnet & Pacchetti Trattamenti Attivi */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-zinc-900 flex items-center gap-2">
+                    <Ticket className="w-4 h-4 text-purple-600" />
+                    Carnet & Pacchetti Attivi ({customerPackages.length})
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={() => setIsAssignPackageOpen(true)}
+                    className="inline-flex items-center gap-1 text-xs font-bold text-purple-700 hover:text-purple-900 bg-purple-50 hover:bg-purple-100 border border-purple-200 px-2.5 py-1 rounded-lg transition-colors cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    Assegna Carnet
+                  </button>
+                </div>
+
+                {customerPackages.length > 0 ? (
+                  <div className="space-y-2">
+                    {customerPackages.map((cpkg) => (
+                      <div
+                        key={cpkg.id}
+                        className="p-3.5 bg-purple-50/50 border border-purple-200/80 rounded-xl flex items-center justify-between gap-3"
+                      >
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h5 className="font-bold text-xs sm:text-sm text-zinc-900">{cpkg.packageName}</h5>
+                            <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded-full uppercase ${cpkg.status === "ACTIVE" ? "bg-emerald-100 text-emerald-800" : "bg-zinc-200 text-zinc-700"
+                              }`}>
+                              {cpkg.status === "ACTIVE" ? "Attivo" : "Esaurito"}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-zinc-500 mt-0.5">
+                            Trattamento: <span className="font-medium text-zinc-800">{cpkg.serviceName}</span>
+                          </p>
+                          <p className="text-[10px] text-zinc-400 mt-0.5">
+                            Scade il: {new Date(cpkg.expiryDate).toLocaleDateString('it-IT')}
+                          </p>
+                        </div>
+
+                        <div className="flex items-center gap-3 shrink-0">
+                          <div className="text-right">
+                            <span className="text-base font-black text-purple-900 block font-mono">
+                              {cpkg.remainingSessions} / {cpkg.totalSessions}
+                            </span>
+                            <span className="text-[10px] text-purple-600 font-semibold block">sedute rimaste</span>
+                          </div>
+
+                          {cpkg.remainingSessions > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => handleUsePackageSession(cpkg.id)}
+                              className="px-2.5 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-bold transition-all shadow-2xs active:scale-95 cursor-pointer"
+                              title="Registra l'utilizzo di 1 seduta"
+                            >
+                              -1 Seduta
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="p-3.5 bg-zinc-50 border border-zinc-200/70 rounded-xl text-xs text-zinc-500 text-center">
+                    Nessun carnet attivo per questo cliente. Clicca &quot;Assegna Carnet&quot; per attivare un pacchetto trattamenti.
+                  </div>
+                )}
               </div>
 
               {/* Storico Appuntamenti */}
@@ -775,9 +976,9 @@ export default function ClientiPage() {
               </p>
             </div>
           </div>
-          <button 
+          <button
             type="button"
-            onClick={() => setIsBookingDrawerOpen(false)} 
+            onClick={() => setIsBookingDrawerOpen(false)}
             className="text-zinc-400 hover:text-zinc-900 p-1.5 rounded-lg hover:bg-zinc-50 transition-colors"
           >
             <X className="w-5 h-5" />
@@ -786,7 +987,7 @@ export default function ClientiPage() {
 
         <form onSubmit={handleConfirmBooking} className="flex-1 flex flex-col justify-between overflow-hidden">
           <div className="flex-1 overflow-y-auto p-6 space-y-6">
-            
+
             {/* Box Cliente Selezionato */}
             {bookingCustomer && (
               <div className="bg-zinc-50 border border-zinc-200/80 rounded-xl p-4 flex items-center gap-3.5">
@@ -836,11 +1037,10 @@ export default function ClientiPage() {
                         key={srv.id}
                         type="button"
                         onClick={() => setBookingServiceId(String(srv.id))}
-                        className={`text-left p-3 rounded-xl border transition-all flex items-center justify-between ${
-                          isSelected
+                        className={`text-left p-3 rounded-xl border transition-all flex items-center justify-between ${isSelected
                             ? "bg-zinc-900 text-white border-zinc-900 shadow-xs"
                             : "bg-white hover:bg-zinc-50 border-zinc-200 text-zinc-800"
-                        }`}
+                          }`}
                       >
                         <div>
                           <p className="text-sm font-medium">{srv.name}</p>
@@ -883,15 +1083,13 @@ export default function ClientiPage() {
                         key={st.id}
                         type="button"
                         onClick={() => setBookingStaffId(st.id)}
-                        className={`p-2.5 rounded-xl border text-left transition-all flex items-center gap-2.5 ${
-                          isSelected
+                        className={`p-2.5 rounded-xl border text-left transition-all flex items-center gap-2.5 ${isSelected
                             ? "bg-zinc-900 text-white border-zinc-900 shadow-xs"
                             : "bg-white hover:bg-zinc-50 border-zinc-200 text-zinc-800"
-                        }`}
+                          }`}
                       >
-                        <div className={`w-7 h-7 rounded-full text-xs font-semibold flex items-center justify-center shrink-0 uppercase ${
-                          isSelected ? "bg-white/20 text-white" : "bg-zinc-100 text-zinc-700"
-                        }`}>
+                        <div className={`w-7 h-7 rounded-full text-xs font-semibold flex items-center justify-center shrink-0 uppercase ${isSelected ? "bg-white/20 text-white" : "bg-zinc-100 text-zinc-700"
+                          }`}>
                           {st.fullName[0]}
                         </div>
                         <div className="truncate">
@@ -938,11 +1136,10 @@ export default function ClientiPage() {
                         key={slot}
                         type="button"
                         onClick={() => setBookingTime(slot)}
-                        className={`py-1.5 px-2 text-xs font-medium rounded-lg text-center transition-all ${
-                          isSelected
+                        className={`py-1.5 px-2 text-xs font-medium rounded-lg text-center transition-all ${isSelected
                             ? "bg-zinc-900 text-white shadow-2xs font-semibold"
                             : "bg-white text-zinc-700 hover:bg-zinc-100 border border-zinc-200/60"
-                        }`}
+                          }`}
                       >
                         {slot}
                       </button>
@@ -1003,6 +1200,63 @@ export default function ClientiPage() {
           </div>
         </form>
       </div>
+
+      {/* Modal Assegna Carnet / Pacchetto Trattamenti */}
+      {isAssignPackageOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-950/60 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white border border-zinc-200 rounded-3xl p-6 max-w-md w-full space-y-4 shadow-xl">
+            <div className="flex items-center justify-between pb-3 border-b border-zinc-100">
+              <div className="flex items-center gap-2">
+                <Ticket className="w-5 h-5 text-purple-600" />
+                <h3 className="font-bold text-base text-zinc-900">Assegna Carnet a {selectedCustomer?.firstName}</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsAssignPackageOpen(false)}
+                className="text-zinc-400 hover:text-zinc-700 p-1 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-zinc-500">
+              Scegli uno dei pacchetti trattamenti attivi per attivarlo immediatamente sull&apos;anagrafica del cliente:
+            </p>
+
+            <div className="space-y-2 max-h-60 overflow-y-auto">
+              {salonPackages.map((pkg) => (
+                <div
+                  key={pkg.id}
+                  className="p-3 rounded-xl border border-purple-100 bg-purple-50/50 hover:bg-purple-100/70 transition-all flex items-center justify-between gap-3"
+                >
+                  <div>
+                    <h5 className="font-bold text-xs text-zinc-900">{pkg.name}</h5>
+                    <p className="text-[11px] text-zinc-500">{pkg.totalSessions} sedute • {pkg.serviceName}</p>
+                    <span className="text-[10px] text-purple-700 font-semibold">Valido {pkg.validityDays} giorni</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleAssignPkg(pkg)}
+                    className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-bold transition-all shadow-2xs cursor-pointer"
+                  >
+                    Assegna (€{pkg.price.toFixed(2)})
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            <div className="pt-2 border-t border-zinc-100 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setIsAssignPackageOpen(false)}
+                className="px-4 py-2 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 rounded-xl text-xs font-semibold cursor-pointer"
+              >
+                Annulla
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

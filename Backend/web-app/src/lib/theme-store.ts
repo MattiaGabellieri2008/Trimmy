@@ -283,3 +283,4 @@ export async function fetchSalonThemeSettings(tenantId: string): Promise<SalonTh
   }
   return null;
 }
+

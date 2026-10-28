@@ -63,6 +63,7 @@ import BookingWizardModal from "@/components/BookingWizardModal";
 import ReviewModal from "@/components/ReviewModal";
 import SalonShareModal from "@/components/SalonShareModal";
 import { ClientSidebar, ClientTabType } from "@/components/ClientSidebar";
+import ClientFidelitySection from "@/components/ClientFidelitySection";
 
 const MarketplaceMap = dynamic(() => import("@/components/MarketplaceMap"), {
   ssr: false,
@@ -509,6 +510,7 @@ export default function ClientePage() {
                 {activeTab === "marketplace" && "Esplora Saloni & Trattamenti"}
                 {activeTab === "appuntamenti" && "I Miei Appuntamenti"}
                 {activeTab === "preferiti" && "I Miei Saloni Preferiti"}
+                {activeTab === "fidelity" && "Tessera Fedeltà & Carnet"}
                 {activeTab === "profilo" && "Scheda Personale Cliente"}
               </span>
             </div>
@@ -1174,6 +1176,20 @@ export default function ClientePage() {
                   ))}
                 </div>
               )}
+            </div>
+          )}
+
+          {/* ======================= SEZIONE: TESSERA & PUNTI FEDELTÀ CLIENTE ======================= */}
+          {activeTab === "fidelity" && (
+            <div className="max-w-4xl mx-auto">
+              <ClientFidelitySection
+                clientName={clientDisplayName || profile?.displayName || currentUser?.displayName || "Cliente"}
+                clientEmail={profile?.email || currentUser?.email || ""}
+                clientPhone={clientPhone || profile?.phone || ""}
+                clientUid={currentUser?.uid}
+                appointments={appointments}
+                salonsList={salonsList}
+              />
             </div>
           )}
 

@@ -19,7 +19,10 @@ import {
   Scissors, 
   ArrowRight,
   ShieldCheck,
-  CheckCircle2
+  CheckCircle2,
+  Award,
+  Gift,
+  Ticket
 } from "lucide-react";
 import { 
   CheckoutItem, 
@@ -29,6 +32,17 @@ import {
   saveCheckoutTransaction 
 } from "@/lib/checkout-store";
 import { ProductItem, fetchSalonProducts } from "@/lib/inventory-store";
+import { 
+  CustomerLoyalty, 
+  CustomerPackage, 
+  TreatmentPackage, 
+  fetchCustomerLoyalty, 
+  fetchCustomerPackages, 
+  fetchSalonTreatmentPackages, 
+  fetchSalonLoyaltySettings, 
+  LoyaltySettings, 
+  computeTier 
+} from "@/lib/fidelity-store";
 
 interface CheckoutModalProps {
   isOpen: boolean;
@@ -37,6 +51,7 @@ interface CheckoutModalProps {
   salonRawId?: string;
   salonName?: string;
   appointmentId?: string;
+  initialCustomerId?: string;
   initialCustomerName?: string;
   initialCustomerPhone?: string;
   initialItems?: CheckoutItem[];
@@ -51,6 +66,7 @@ export default function CheckoutModal({
   salonRawId,
   salonName = "Trimmy Salone",
   appointmentId,
+  initialCustomerId,
   initialCustomerName = "Cliente al Banco",
   initialCustomerPhone = "",
   initialItems = [],
@@ -62,6 +78,16 @@ export default function CheckoutModal({
   const [items, setItems] = useState<CheckoutItem[]>([]);
   const [discountEuro, setDiscountEuro] = useState<number>(0);
   const [selectedMethod, setSelectedMethod] = useState<PaymentMethod>("CARD");
+  
+  // Dettagli Fidelity & Carnet
+  const [customerLoyalty, setCustomerLoyalty] = useState<CustomerLoyalty | null>(null);
+  const [customerPackages, setCustomerPackages] = useState<CustomerPackage[]>([]);
+  const [salonPackages, setSalonPackages] = useState<TreatmentPackage[]>([]);
+  const [loyaltySettings, setLoyaltySettings] = useState<LoyaltySettings | null>(null);
+  const [pointsToRedeem, setPointsToRedeem] = useState<number>(0);
+  const [selectedPackageSession, setSelectedPackageSession] = useState<CustomerPackage | null>(null);
+  const [packageDeduction, setPackageDeduction] = useState<number>(0);
+  const [activeCatalogTab, setActiveCatalogTab] = useState<"products" | "packages">("products");
   
   // Dettagli Contanti & Resto
   const [cashGiven, setCashGiven] = useState<number>(0);
@@ -77,7 +103,7 @@ export default function CheckoutModal({
   const [completedTx, setCompletedTx] = useState<CheckoutTransaction | null>(null);
   const [inventoryProducts, setInventoryProducts] = useState<ProductItem[]>([]);
 
-  // Carica i prodotti del magazzino reale per la vendita al banco
+  // Carica i prodotti del magazzino reale per la vendita al banco e le impostazioni fidelity
   useEffect(() => {
     if (!isOpen || !tenantId) return;
     fetchSalonProducts(tenantId).then((prods) => {
@@ -85,7 +111,23 @@ export default function CheckoutModal({
       const retailOnly = prods.filter((p) => p.category === "RIVENDITA");
       setInventoryProducts(retailOnly);
     }).catch(() => {});
+
+    fetchSalonLoyaltySettings(tenantId).then(setLoyaltySettings).catch(() => {});
+    fetchSalonTreatmentPackages(tenantId).then(setSalonPackages).catch(() => {});
   }, [isOpen, tenantId]);
+
+  // Carica il saldo punti e i carnet del cliente
+  useEffect(() => {
+    if (!isOpen || !tenantId) return;
+    const effectiveCid = initialCustomerId || (customerPhone ? `phone-${customerPhone.replace(/[^0-9]/g, "")}` : (customerName ? `name-${customerName.toLowerCase().replace(/\s+/g, "_")}` : ""));
+    if (effectiveCid) {
+      fetchCustomerLoyalty(tenantId, effectiveCid).then(setCustomerLoyalty).catch(() => {});
+      fetchCustomerPackages(tenantId, effectiveCid).then((pkgs) => {
+        const activeOnly = pkgs.filter((p) => p.status === "ACTIVE" && p.remainingSessions > 0);
+        setCustomerPackages(activeOnly);
+      }).catch(() => {});
+    }
+  }, [isOpen, tenantId, initialCustomerId, customerPhone, customerName]);
 
   // Inizializza articoli
   useEffect(() => {
@@ -102,18 +144,37 @@ export default function CheckoutModal({
     setCustomerName(initialCustomerName || "Cliente al Banco");
     setCustomerPhone(initialCustomerPhone || "");
     setDiscountEuro(0);
+    setPointsToRedeem(0);
+    setSelectedPackageSession(null);
+    setPackageDeduction(0);
     setSelectedMethod("CARD");
     setCompletedTx(null);
   }, [isOpen, initialCustomerName, initialCustomerPhone, initialItems]);
+
+  // Calcolo Sconto Fedeltà da Punti
+  const loyaltyDiscountEuro = useMemo(() => {
+    if (!pointsToRedeem || !loyaltySettings) return 0;
+    return Number((pointsToRedeem * (loyaltySettings.euroValuePerPoint || 0.10)).toFixed(2));
+  }, [pointsToRedeem, loyaltySettings]);
 
   // Calcolo Totali
   const subtotal = useMemo(() => {
     return items.reduce((acc, it) => acc + (it.price * it.quantity), 0);
   }, [items]);
 
+  const totalDiscount = useMemo(() => {
+    return discountEuro + loyaltyDiscountEuro + packageDeduction;
+  }, [discountEuro, loyaltyDiscountEuro, packageDeduction]);
+
   const finalTotal = useMemo(() => {
-    return Math.max(0, subtotal - discountEuro);
-  }, [subtotal, discountEuro]);
+    return Math.max(0, subtotal - totalDiscount);
+  }, [subtotal, totalDiscount]);
+
+  // Punti che il cliente guadagnerà con questo incasso
+  const estimatedPointsEarned = useMemo(() => {
+    if (!loyaltySettings || !loyaltySettings.enabled) return 0;
+    return Math.floor(finalTotal * (loyaltySettings.pointsPerEuro || 0.1));
+  }, [finalTotal, loyaltySettings]);
 
   // Calcolo resto contanti
   const changeGiven = useMemo(() => {
@@ -163,16 +224,19 @@ export default function CheckoutModal({
     setIsSubmitting(true);
     const receiptNum = `CORR-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`;
 
+    const effectiveCid = initialCustomerId || (customerPhone ? `phone-${customerPhone.replace(/[^0-9]/g, "")}` : (customerName ? `name-${customerName.toLowerCase().replace(/\s+/g, "_")}` : undefined));
+
     const tx: CheckoutTransaction = {
       id: `tx-${Date.now()}`,
       tenantId,
       salonRawId,
       appointmentId,
+      customerId: effectiveCid,
       customerName: customerName.trim() || "Cliente al Banco",
       customerPhone: customerPhone.trim() || undefined,
       items,
       totalAmount: subtotal,
-      discountAmount: discountEuro > 0 ? discountEuro : undefined,
+      discountAmount: totalDiscount > 0 ? totalDiscount : undefined,
       finalAmount: finalTotal,
       paymentMethod: selectedMethod,
       paymentDetails: {
@@ -183,7 +247,15 @@ export default function CheckoutModal({
       receiptNumber: receiptNum,
       taxRate: 22,
       operatorName: operatorName || (availableStaff[0]?.fullName) || "Staff Salone",
-      issuedAt: new Date().toISOString()
+      issuedAt: new Date().toISOString(),
+      loyaltyPointsEarned: estimatedPointsEarned,
+      loyaltyPointsRedeemed: pointsToRedeem > 0 ? pointsToRedeem : undefined,
+      loyaltyDiscountEuro: loyaltyDiscountEuro > 0 ? loyaltyDiscountEuro : undefined,
+      packageSessionUsed: selectedPackageSession ? {
+        customerPackageId: selectedPackageSession.id,
+        packageName: selectedPackageSession.packageName,
+        remainingAfter: Math.max(0, selectedPackageSession.remainingSessions - 1)
+      } : undefined
     };
 
     try {
@@ -283,6 +355,27 @@ export default function CheckoutModal({
                       <span className="text-emerald-700 font-bold">Resto Dato: €{completedTx.paymentDetails.changeGiven.toFixed(2)}</span>
                     )}
                   </div>
+
+                  {/* Informazioni Fidelity e Carnet su Ricevuta */}
+                  {completedTx.loyaltyPointsEarned !== undefined && completedTx.loyaltyPointsEarned > 0 && (
+                    <div className="flex justify-between text-[11px] text-amber-700 font-semibold pt-1">
+                      <span>Punti Fedeltà Guadagnati:</span>
+                      <span>+{completedTx.loyaltyPointsEarned} pt ⭐</span>
+                    </div>
+                  )}
+                  {completedTx.loyaltyPointsRedeemed !== undefined && completedTx.loyaltyPointsRedeemed > 0 && (
+                    <div className="flex justify-between text-[11px] text-indigo-700 font-semibold">
+                      <span>Punti Riscattati ({completedTx.loyaltyPointsRedeemed} pt):</span>
+                      <span>-€{completedTx.loyaltyDiscountEuro?.toFixed(2)} 🎁</span>
+                    </div>
+                  )}
+                  {completedTx.packageSessionUsed && (
+                    <div className="flex justify-between text-[11px] text-emerald-700 font-semibold">
+                      <span>Seduta Carnet Scalata:</span>
+                      <span>1x {completedTx.packageSessionUsed.packageName} ({completedTx.packageSessionUsed.remainingAfter} rimaste) 🎟️</span>
+                    </div>
+                  )}
+
                   <div className="flex justify-between text-[10px] text-zinc-400 pt-1">
                     <span>Cliente: {completedTx.customerName}</span>
                     <span>Op: {completedTx.operatorName}</span>
@@ -374,9 +467,13 @@ export default function CheckoutModal({
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1.5">
                           <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded-md uppercase ${
-                            item.type === "SERVICE" ? "bg-zinc-900 text-white" : "bg-amber-100 text-amber-800"
+                            item.type === "SERVICE" 
+                              ? "bg-zinc-900 text-white" 
+                              : item.type === "PACKAGE"
+                              ? "bg-purple-100 text-purple-800 border border-purple-200"
+                              : "bg-amber-100 text-amber-800"
                           }`}>
-                            {item.type === "SERVICE" ? "Servizio" : "Prodotto"}
+                            {item.type === "SERVICE" ? "Servizio" : item.type === "PACKAGE" ? "Carnet" : "Prodotto"}
                           </span>
                           <span className="font-bold text-xs sm:text-sm text-zinc-900 truncate">{item.name}</span>
                         </div>
@@ -487,18 +584,198 @@ export default function CheckoutModal({
                     })}
                   </div>
                 </div>
+
+                {/* Aggiunta Rapida Pacchetti Trattamenti / Carnet (Fidelity B7) */}
+                {salonPackages.length > 0 && (
+                  <div className="space-y-1.5 pt-1 border-t border-zinc-200/50">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] uppercase font-bold text-purple-700 tracking-wider flex items-center gap-1">
+                        <Ticket className="w-3 h-3 text-purple-600" />
+                        + Vendi Carnet / Pacchetto Trattamenti (Prepagato):
+                      </span>
+                      <span className="text-[10px] text-zinc-400">
+                        Attivazione automatica su cliente
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {salonPackages.map((pkg) => (
+                        <button
+                          key={pkg.id}
+                          type="button"
+                          onClick={() => {
+                            handleAddItem({
+                              id: pkg.id,
+                              type: "PACKAGE",
+                              name: `Carnet: ${pkg.name}`,
+                              price: pkg.price,
+                              quantity: 1,
+                              operatorName: operatorName || undefined,
+                              packageDetails: {
+                                totalSessions: pkg.totalSessions,
+                                validityDays: pkg.validityDays,
+                                serviceId: pkg.serviceId,
+                                serviceName: pkg.serviceName
+                              }
+                            });
+                          }}
+                          className="px-2.5 py-1 border border-purple-200 bg-purple-50/70 hover:bg-purple-100 rounded-lg text-[11px] font-medium text-purple-900 flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+                        >
+                          <Plus className="w-3 h-3 text-purple-600" />
+                          <span>{pkg.name}</span>
+                          <strong className="text-purple-950 font-bold">€{pkg.price.toFixed(2)}</strong>
+                          <span className="text-[9px] px-1 py-0.2 rounded font-bold bg-purple-200/80 text-purple-800">
+                            {pkg.totalSessions} sedute
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
+
+              {/* Box Carnet Attivi Cliente (se presenti) */}
+              {customerPackages.length > 0 && (
+                <div className="p-3 bg-purple-50/80 border border-purple-200 rounded-2xl space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-purple-950 flex items-center gap-1.5">
+                      <Ticket className="w-3.5 h-3.5 text-purple-600" />
+                      Carnet Attivi Trovati per il Cliente ({customerPackages.length})
+                    </span>
+                    <span className="text-[10px] text-purple-600 font-medium">Scalamento seduta</span>
+                  </div>
+                  <div className="space-y-1.5">
+                    {customerPackages.map((cpkg) => {
+                      const isSelected = selectedPackageSession?.id === cpkg.id;
+                      return (
+                        <div key={cpkg.id} className="flex items-center justify-between p-2.5 bg-white rounded-xl border border-purple-100 text-xs">
+                          <div>
+                            <p className="font-bold text-zinc-900">{cpkg.packageName}</p>
+                            <p className="text-[11px] text-zinc-500">
+                              {cpkg.remainingSessions} di {cpkg.totalSessions} sedute rimaste • Scade {new Date(cpkg.expiryDate).toLocaleDateString('it-IT')}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (isSelected) {
+                                setSelectedPackageSession(null);
+                                setPackageDeduction(0);
+                              } else {
+                                setSelectedPackageSession(cpkg);
+                                const match = items.find(i => i.type === "SERVICE");
+                                setPackageDeduction(match ? match.price : 25);
+                              }
+                            }}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                              isSelected 
+                                ? "bg-purple-600 text-white shadow-xs" 
+                                : "bg-purple-100 hover:bg-purple-200 text-purple-900"
+                            }`}
+                          >
+                            {isSelected ? `✓ Seduta Applicata (-€${packageDeduction.toFixed(2)})` : "Usa 1 Seduta"}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Box Fidelity Club & Riscatto Punti Cliente */}
+              {customerLoyalty && (
+                <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-2xl space-y-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-1.5">
+                      <Award className="w-4 h-4 text-amber-600" />
+                      <span className="font-bold text-amber-950">Fidelity Club:</span>
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase border ${computeTier(customerLoyalty.totalPointsEarned).badgeClass}`}>
+                        {computeTier(customerLoyalty.totalPointsEarned).label}
+                      </span>
+                    </div>
+                    <span className="font-bold text-amber-900 font-mono">
+                      Saldo: {customerLoyalty.pointsBalance} pt (~€{(customerLoyalty.pointsBalance * (loyaltySettings?.euroValuePerPoint || 0.10)).toFixed(2)})
+                    </span>
+                  </div>
+
+                  {customerLoyalty.pointsBalance >= (loyaltySettings?.minPointsToRedeem || 50) ? (
+                    <div className="flex items-center justify-between gap-2 pt-1 border-t border-amber-200/60">
+                      <span className="text-[11px] text-amber-800 font-medium">Riscatta sconto punti:</span>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setPointsToRedeem(0)}
+                          className={`px-2 py-0.5 rounded text-[10px] font-bold cursor-pointer ${pointsToRedeem === 0 ? "bg-amber-800 text-white" : "bg-white text-amber-800 border border-amber-200"}`}
+                        >
+                          Nessuno
+                        </button>
+                        {customerLoyalty.pointsBalance >= 50 && (
+                          <button
+                            type="button"
+                            onClick={() => setPointsToRedeem(50)}
+                            className={`px-2 py-0.5 rounded text-[10px] font-bold cursor-pointer ${pointsToRedeem === 50 ? "bg-amber-800 text-white" : "bg-white text-amber-800 border border-amber-200"}`}
+                          >
+                            -5€ (50 pt)
+                          </button>
+                        )}
+                        {customerLoyalty.pointsBalance >= 100 && (
+                          <button
+                            type="button"
+                            onClick={() => setPointsToRedeem(100)}
+                            className={`px-2 py-0.5 rounded text-[10px] font-bold cursor-pointer ${pointsToRedeem === 100 ? "bg-amber-800 text-white" : "bg-white text-amber-800 border border-amber-200"}`}
+                          >
+                            -10€ (100 pt)
+                          </button>
+                        )}
+                        {customerLoyalty.pointsBalance >= 200 && (
+                          <button
+                            type="button"
+                            onClick={() => setPointsToRedeem(200)}
+                            className={`px-2 py-0.5 rounded text-[10px] font-bold cursor-pointer ${pointsToRedeem === 200 ? "bg-amber-800 text-white" : "bg-white text-amber-800 border border-amber-200"}`}
+                          >
+                            -20€ (200 pt)
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-[10px] text-amber-700">
+                      Mancano {Math.max(0, (loyaltySettings?.minPointsToRedeem || 50) - customerLoyalty.pointsBalance)} punti per riscattare il prossimo premio da 5€.
+                    </p>
+                  )}
+                </div>
+              )}
 
               {/* Sconto & Totale Cassa */}
               <div className="p-4 bg-zinc-900 text-white rounded-2xl space-y-3">
                 <div className="flex items-center justify-between text-xs text-zinc-300 border-b border-zinc-800 pb-2.5">
-                  <span>Subtotale Servizi & Prodotti:</span>
+                  <span>Subtotale Articoli:</span>
                   <strong className="text-sm text-white">€{subtotal.toFixed(2)}</strong>
                 </div>
 
+                {/* Dettaglio Sconti se presenti */}
+                {packageDeduction > 0 && (
+                  <div className="flex items-center justify-between text-xs text-purple-300">
+                    <span className="flex items-center gap-1">
+                      <Ticket className="w-3.5 h-3.5 text-purple-400" />
+                      Seduta Carnet ({selectedPackageSession?.packageName}):
+                    </span>
+                    <strong className="text-purple-300">-€{packageDeduction.toFixed(2)}</strong>
+                  </div>
+                )}
+
+                {loyaltyDiscountEuro > 0 && (
+                  <div className="flex items-center justify-between text-xs text-amber-300">
+                    <span className="flex items-center gap-1">
+                      <Gift className="w-3.5 h-3.5 text-amber-400" />
+                      Sconto Punti Fidelity ({pointsToRedeem} pt):
+                    </span>
+                    <strong className="text-amber-300">-€{loyaltyDiscountEuro.toFixed(2)}</strong>
+                  </div>
+                )}
+
                 <div className="flex items-center justify-between gap-3 text-xs">
                   <span className="flex items-center gap-1 text-zinc-300">
-                    <Percent className="w-3.5 h-3.5 text-amber-400" /> Sconto Cassa (€):
+                    <Percent className="w-3.5 h-3.5 text-amber-400" /> Sconto Cassa Aggiuntivo (€):
                   </span>
                   <div className="flex items-center gap-1.5">
                     <button 
@@ -534,9 +811,17 @@ export default function CheckoutModal({
                 </div>
 
                 <div className="flex items-baseline justify-between pt-1 border-t border-zinc-800">
-                  <span className="font-extrabold text-xs uppercase tracking-wider text-amber-400">
-                    Totale da Incassare:
-                  </span>
+                  <div>
+                    <span className="font-extrabold text-xs uppercase tracking-wider text-amber-400 block">
+                      Totale da Incassare:
+                    </span>
+                    {estimatedPointsEarned > 0 && (
+                      <span className="text-[10px] text-zinc-400 flex items-center gap-1 mt-0.5">
+                        <Award className="w-3 h-3 text-amber-400" />
+                        Guadagnerà +{estimatedPointsEarned} punti
+                      </span>
+                    )}
+                  </div>
                   <span className="text-3xl font-black text-white tracking-tight">
                     €{finalTotal.toFixed(2)}
                   </span>
