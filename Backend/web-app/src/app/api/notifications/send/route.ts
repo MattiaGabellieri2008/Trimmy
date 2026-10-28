@@ -1,36 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { adminAuth, adminMessaging } from "@/lib/firebase-admin";
-
-// ─── RATE LIMITER IN-MEMORY (per istanza) ───
-const rateLimitMap = new Map<string, { count: number; windowStart: number }>();
-const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minuto
-const RATE_LIMIT_MAX_REQUESTS = 30; // max 30 notifiche al minuto
-
-function isRateLimited(uid: string): boolean {
-  const now = Date.now();
-  const entry = rateLimitMap.get(uid);
-
-  if (!entry || now - entry.windowStart > RATE_LIMIT_WINDOW_MS) {
-    rateLimitMap.set(uid, { count: 1, windowStart: now });
-    return false;
-  }
-
-  entry.count++;
-  if (entry.count > RATE_LIMIT_MAX_REQUESTS) {
-    return true;
-  }
-  return false;
-}
-
-// Pulizia periodica della mappa per evitare memory leak
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, entry] of rateLimitMap.entries()) {
-    if (now - entry.windowStart > RATE_LIMIT_WINDOW_MS * 2) {
-      rateLimitMap.delete(key);
-    }
-  }
-}, RATE_LIMIT_WINDOW_MS * 5);
+import { checkDistributedRateLimit } from "@/lib/distributed-rate-limiter";
 
 export async function POST(req: NextRequest) {
   try {
@@ -57,11 +27,29 @@ export async function POST(req: NextRequest) {
 
     const callerUid = decodedToken.uid;
 
-    // ─── 2. RATE LIMITING ───
-    if (isRateLimited(callerUid)) {
+    // ─── 2. RATE LIMITING DISTRIBUITO PER CLOUD RUN (OPT-02) ───
+    const rateCheck = await checkDistributedRateLimit(callerUid, {
+      scope: "notifications_send",
+      maxRequests: 30,
+      windowMs: 60 * 1000,
+    });
+
+    if (!rateCheck.allowed) {
       return NextResponse.json(
-        { success: false, error: "Troppe notifiche richieste. Attendi un momento prima di riprovare." },
-        { status: 429 }
+        { 
+          success: false, 
+          error: `Troppe notifiche richieste. Attendi ${rateCheck.resetSeconds} secondi prima di riprovare.`,
+          retryAfter: rateCheck.resetSeconds,
+        },
+        { 
+          status: 429,
+          headers: {
+            "Retry-After": rateCheck.resetSeconds.toString(),
+            "X-RateLimit-Limit": rateCheck.limit.toString(),
+            "X-RateLimit-Remaining": rateCheck.remaining.toString(),
+            "X-RateLimit-Reset": rateCheck.resetSeconds.toString(),
+          }
+        }
       );
     }
 

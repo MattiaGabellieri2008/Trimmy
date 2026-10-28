@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { adminDb, adminAuth } from "@/lib/firebase-admin";
+import { checkDistributedRateLimit } from "@/lib/distributed-rate-limiter";
 
 export async function POST(req: NextRequest) {
   try {
@@ -12,8 +13,9 @@ export async function POST(req: NextRequest) {
     }
 
     const idToken = authHeader.split("Bearer ")[1];
+    let decodedUser;
     try {
-      await adminAuth.verifyIdToken(idToken);
+      decodedUser = await adminAuth.verifyIdToken(idToken);
     } catch {
       return NextResponse.json(
         { success: false, error: "Token non valido o scaduto." },
@@ -22,7 +24,33 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json().catch(() => ({}));
-    const tenantId = body.tenantId || "tenant-default";
+    const tenantId = body.tenantId || decodedUser.uid || "tenant-default";
+
+    // ─── RATE LIMITING DISTRIBUITO PER CLOUD RUN (OPT-02) ───
+    const rateCheck = await checkDistributedRateLimit(tenantId, {
+      scope: "sync_reconcile",
+      maxRequests: 20,
+      windowMs: 60 * 1000,
+    });
+
+    if (!rateCheck.allowed) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Troppe richieste di sincronizzazione. Attendi ${rateCheck.resetSeconds} secondi.`,
+          retryAfter: rateCheck.resetSeconds,
+        },
+        {
+          status: 429,
+          headers: {
+            "Retry-After": rateCheck.resetSeconds.toString(),
+            "X-RateLimit-Limit": rateCheck.limit.toString(),
+            "X-RateLimit-Remaining": rateCheck.remaining.toString(),
+            "X-RateLimit-Reset": rateCheck.resetSeconds.toString(),
+          },
+        }
+      );
+    }
 
     if (!adminDb) {
       return NextResponse.json({
@@ -61,16 +89,14 @@ export async function POST(req: NextRequest) {
       success: true,
       tenantId,
       totalChecked: appts.length,
-      reconciled: reconciledCount,
+      reconciledCount,
       timestamp: new Date().toISOString()
     });
-
-  } catch (err: any) {
-    console.error("Errore API reconcile:", err);
+  } catch (error: any) {
+    console.error("Errore server riconciliazione sync:", error);
     return NextResponse.json({
       success: false,
-      error: err?.message || "Errore interno durante la riconciliazione"
+      error: error.message || "Errore interno durante la riconciliazione"
     }, { status: 500 });
   }
 }
-
