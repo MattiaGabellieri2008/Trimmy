@@ -2,6 +2,7 @@ import { db, dataConnect } from "./firebase";
 import { doc, getDoc, setDoc, collection, getDocs, query, deleteDoc } from "firebase/firestore";
 import { listCustomers, createCustomer, ListCustomersData } from "../dataconnect-generated";
 import { getSalonTenantId } from "./tenant-helper";
+import { enqueueOutboxMutation } from "./outbox-sync";
 
 export interface CustomerItem {
   id: string;
@@ -194,8 +195,8 @@ export async function fetchSalonCustomers(tenantId: string, alternateId?: string
     const subColRef = collection(db, "saloni", tid, "clienti");
     const snap = await getDocs(subColRef);
     snap.forEach((d) => {
-      const data = d.data() as CustomerItem;
-      if (data && (data.firstName || data.lastName)) {
+      const data = d.data() as CustomerItem & { isDeleted?: boolean };
+      if (data && (data.firstName || data.lastName) && !data.isDeleted) {
         const item: CustomerItem = {
           ...data,
           id: data.id || d.id,
@@ -215,8 +216,8 @@ export async function fetchSalonCustomers(tenantId: string, alternateId?: string
       const subColAlt = collection(db, "saloni", altId, "clienti");
       const snapAlt = await getDocs(subColAlt);
       snapAlt.forEach((d) => {
-        const data = d.data() as CustomerItem;
-        if (data && (data.firstName || data.lastName)) {
+        const data = d.data() as CustomerItem & { isDeleted?: boolean };
+        if (data && (data.firstName || data.lastName) && !data.isDeleted) {
           const item: CustomerItem = {
             ...data,
             id: data.id || d.id,
@@ -335,9 +336,12 @@ export async function saveSalonCustomer(
     setSalonCustomersSync(altId, updated);
   }
 
-  // 2. Salva in Cloud SQL PostgreSQL DataConnect (se non era già esistente in DataConnect)
+  // 2. Salva in Cloud SQL PostgreSQL DataConnect (con fallback automatico a Outbox)
   if (!match) {
     try {
+      if (typeof navigator !== "undefined" && !navigator.onLine) {
+        throw new Error("Client Offline");
+      }
       await createCustomer(dataConnect, {
         tenantId: tid,
         firstName: customerItem.firstName,
@@ -348,7 +352,13 @@ export async function saveSalonCustomer(
         technicalNotes: customerItem.technicalNotes || undefined
       });
     } catch (dcErr) {
-      console.warn("Nota inserimento cliente DataConnect:", dcErr);
+      console.warn("DataConnect non raggiungibile, accodamento Outbox cliente:", dcErr);
+      await enqueueOutboxMutation(tid, {
+        entity: "CUSTOMER",
+        operation: "CREATE",
+        payload: customerItem,
+        timestamp: customerItem.createdAt
+      });
     }
   }
 
@@ -420,16 +430,23 @@ export async function deleteSalonCustomer(
     setSalonCustomersSync(altId, currentAlt);
   }
 
-  // 2. Rimuovi da Cloud Firestore
+  // 2. Soft delete su Cloud Firestore (marcatura isDeleted e deletedAt con Outbox)
+  const delIso = new Date().toISOString();
   try {
     const docRef = doc(db, "saloni", tid, "clienti", customerId);
-    await deleteDoc(docRef);
+    await setDoc(docRef, { isDeleted: true, deletedAt: delIso }, { merge: true });
     if (altId) {
       const altDocRef = doc(db, "saloni", altId, "clienti", customerId);
-      await deleteDoc(altDocRef);
+      await setDoc(altDocRef, { isDeleted: true, deletedAt: delIso }, { merge: true });
     }
   } catch (fsErr) {
-    console.warn("Nota eliminazione cliente Firestore:", fsErr);
+    console.warn("Nota eliminazione cliente Firestore (accodamento Outbox):", fsErr);
+    await enqueueOutboxMutation(tid, {
+      entity: "CUSTOMER",
+      operation: "DELETE",
+      payload: { id: customerId },
+      timestamp: delIso
+    });
   }
 
   if (typeof window !== "undefined") {

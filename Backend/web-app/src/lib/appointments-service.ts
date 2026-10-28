@@ -21,6 +21,7 @@ import {
 import { getSalonTenantId } from "./tenant-helper";
 import { parseDateSafe } from "./date-utils";
 import { sendNotification } from "./notifications-service";
+import { enqueueOutboxMutation } from "./outbox-sync";
 
 export interface UnifiedAppointmentItem {
   id: string;
@@ -339,8 +340,11 @@ export async function saveSalonAppointment(appt: UnifiedAppointmentItem): Promis
     setSalonAppointmentsSync(rawId, [normalized, ...currentRaw.filter((a) => a.id !== normalized.id)]);
   }
 
-  // 7. Salva in Cloud SQL DataConnect (se disponibile)
+  // 7. Salva in Cloud SQL DataConnect (con fallback automatico a coda Outbox)
   try {
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      throw new Error("Client Offline");
+    }
     await createAppointment(dataConnect, {
       tenantId,
       customerId: normalized.customerId,
@@ -351,7 +355,13 @@ export async function saveSalonAppointment(appt: UnifiedAppointmentItem): Promis
       status: normalized.status
     });
   } catch (dcErr) {
-    console.warn("Nota salvataggio appuntamento DataConnect:", dcErr);
+    console.warn("Nota salvataggio appuntamento DataConnect (accodamento Outbox):", dcErr);
+    await enqueueOutboxMutation(tenantId, {
+      entity: "APPOINTMENT",
+      operation: "CREATE",
+      payload: normalized,
+      timestamp: normalized.createdAt
+    });
   }
 
   // 8. Invia notifica automatica di conferma (se il cliente ha un telefono)
@@ -571,8 +581,8 @@ export async function fetchSalonAppointments(
     }
   }
 
-  // Filtra per range temporale (se fornito)
-  let allItems = Array.from(foundMap.values());
+  // Filtra per range temporale ed esclude soft-deleted (isDeleted)
+  let allItems = Array.from(foundMap.values()).filter((appt: any) => !appt.isDeleted);
   if (range) {
     allItems = allItems.filter((appt) => {
       const st = parseDateSafe(appt.startTime);
@@ -669,7 +679,22 @@ export async function updateSalonAppointmentStatus(
     releaseSlotLock(tid, targetAppt.staffId, dateStr, apptId).catch((err) => console.warn("Nota rilascio slot lock:", err));
   }
 
-  // 4. DataConnect
+  // 4. DataConnect & Outbox
+  try {
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      throw new Error("Client Offline");
+    }
+    await updateAppointmentStatus(dataConnect, { id: apptId, status: newStatus as any });
+  } catch (dcErr) {
+    console.warn("Nota aggiornamento status DataConnect (accodamento Outbox):", dcErr);
+    await enqueueOutboxMutation(tid, {
+      entity: "APPOINTMENT",
+      operation: "STATUS_UPDATE",
+      payload: { id: apptId, status: newStatus },
+      timestamp: new Date().toISOString()
+    });
+  }
+
   // 5. Invia notifica di Cancellazione o Richiesta Recensione (se applicabile)
   try {
     const targetAppt = tenList.find((a) => a.id === apptId) || (rid ? getSalonAppointmentsSync(rid).find((a) => a.id === apptId) : undefined);
@@ -757,17 +782,30 @@ export async function deleteSalonAppointment(
     }
   }
 
-  // 3. Firestore
+  // 3. Firestore Soft Delete (imposta isDeleted e deletedAt per consistenza sicura)
+  const delIso = new Date().toISOString();
   try {
-    await deleteDoc(doc(db, "saloni", tid, "appuntamenti", apptId));
+    await setDoc(doc(db, "saloni", tid, "appuntamenti", apptId), {
+      isDeleted: true,
+      deletedAt: delIso,
+      status: "CANCELLED"
+    }, { merge: true });
   } catch (e) {}
   if (rid && rid !== tid) {
     try {
-      await deleteDoc(doc(db, "saloni", rid, "appuntamenti", apptId));
+      await setDoc(doc(db, "saloni", rid, "appuntamenti", apptId), {
+        isDeleted: true,
+        deletedAt: delIso,
+        status: "CANCELLED"
+      }, { merge: true });
     } catch (e) {}
   }
   try {
-    await deleteDoc(doc(db, "appointments", apptId));
+    await setDoc(doc(db, "appointments", apptId), {
+      isDeleted: true,
+      deletedAt: delIso,
+      status: "CANCELLED"
+    }, { merge: true });
   } catch (e) {}
 
   // 3b. Rilascia lo slot lock atomico
@@ -777,11 +815,20 @@ export async function deleteSalonAppointment(
     releaseSlotLock(tid, targetDelAppt.staffId, dateStr, apptId).catch((err) => console.warn("Nota rilascio slot lock:", err));
   }
 
-  // 4. DataConnect
+  // 4. DataConnect & Outbox
   try {
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      throw new Error("Client Offline");
+    }
     await deleteAppointment(dataConnect, { id: apptId });
   } catch (e) {
-    console.warn("Nota cancellazione DataConnect:", e);
+    console.warn("Nota cancellazione DataConnect (accodamento Outbox):", e);
+    await enqueueOutboxMutation(tid, {
+      entity: "APPOINTMENT",
+      operation: "DELETE",
+      payload: { id: apptId },
+      timestamp: delIso
+    });
   }
 
   if (typeof window !== "undefined") {

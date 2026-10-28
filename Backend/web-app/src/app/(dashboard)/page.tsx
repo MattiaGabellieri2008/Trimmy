@@ -33,6 +33,7 @@ import { sendNotification } from "@/lib/notifications-service";
 import { parseDateSafe } from "@/lib/date-utils";
 import CheckoutModal from "@/components/CheckoutModal";
 import DailyCashClosingModal from "@/components/DailyCashClosingModal";
+import SyncBanner from "@/components/SyncBanner";
 import { 
   Plus, 
   X, 
@@ -1202,6 +1203,9 @@ export default function AgendaPage() {
           </button>
         </div>
       </header>
+
+      {/* ─── BANNER SCOMPARSA RESILIENZA SYNC OUTBOX (PostgreSQL ↔ Firestore ↔ Local) ─── */}
+      <SyncBanner tenantId={salonTenantId || currentUser?.uid || "tenant-default"} />
 
       {/* ─── STRISCIA SETTIMANALE A BOLLE (TOUCH-FIRST MOBILE & TABLET) ─── */}
       <div className="bg-white rounded-2xl border border-zinc-200/70 p-2 sm:p-2.5 shadow-2xs mb-4">
