@@ -7,7 +7,6 @@ import { Calendar, Users, Sparkles, BarChart2, Package, LogOut, Settings, Credit
 import { auth } from "@/lib/firebase";
 import { onAuthStateChanged, signOut, User as FirebaseUser } from "firebase/auth";
 import { clearUserProfileCache } from "@/lib/user-profile";
-import { ThemeToggleQuick } from "@/components/ThemeProvider";
 
 interface SidebarProps {
   onClose?: () => void;
@@ -99,13 +98,6 @@ export function Sidebar({ onClose, isMobile = false }: SidebarProps) {
         })}
       </nav>
 
-      {/* Switcher Tema Rapido in Sidebar */}
-      <div className="px-4 pb-2">
-        <div className="flex items-center justify-between p-2 rounded-xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200/60 dark:border-zinc-800 text-xs">
-          <span className="text-zinc-500 dark:text-zinc-400 font-medium">Tema</span>
-          <ThemeToggleQuick />
-        </div>
-      </div>
 
       {/* Dropdown Menu Account */}
       {isDropdownOpen && (
