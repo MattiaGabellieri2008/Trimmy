@@ -110,7 +110,7 @@ class _UpcomingPassCard extends StatelessWidget {
               borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
             ),
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.between,
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Row(
                   children: [
@@ -235,7 +235,7 @@ class _PastAppointmentCard extends StatelessWidget {
         border: Border.all(color: AppColors.zinc200),
       ),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.between,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Expanded(
             child: Column(

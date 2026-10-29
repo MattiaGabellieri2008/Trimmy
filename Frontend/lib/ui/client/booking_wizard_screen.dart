@@ -200,7 +200,6 @@ class _BookingWizardScreenState extends State<BookingWizardScreen> {
 
   // STEP 3: Data e Orario Live
   Widget _buildDateTimeSelection() {
-    final dateFormat = DateFormat('EEEE d MMMM', 'it_IT');
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -351,7 +350,7 @@ class _BookingWizardScreenState extends State<BookingWizardScreen> {
               _summaryRow('Orario', 'Ore $_selectedSlot (${service.durationMinutes} min)'),
               const Divider(height: 24),
               Row(
-                mainAxisAlignment: MainAxisAlignment.between,
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   const Text('Totale da pagare in salone', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                   Text(
@@ -395,7 +394,7 @@ class _BookingWizardScreenState extends State<BookingWizardScreen> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.between,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(label, style: const TextStyle(fontSize: 12, color: AppColors.zinc500)),

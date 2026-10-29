@@ -29,7 +29,6 @@ class CustomerLoyalty {
       case LoyaltyTier.silver:
         return 'Silver Club';
       case LoyaltyTier.bronze:
-      default:
         return 'Bronze Member';
     }
   }
@@ -43,7 +42,6 @@ class CustomerLoyalty {
       case LoyaltyTier.silver:
         return 300;
       case LoyaltyTier.bronze:
-      default:
         return 100;
     }
   }
@@ -104,6 +102,8 @@ class CustomerPackage {
   final int remainingSessions;
   final DateTime expiryDate;
   final String status;
+
+  bool get isActive => status == 'ACTIVE' && remainingSessions > 0;
 
   const CustomerPackage({
     required this.id,

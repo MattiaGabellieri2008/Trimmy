@@ -6,7 +6,6 @@ import 'package:intl/date_symbol_data_local.dart';
 import 'core/theme/app_theme.dart';
 import 'core/services/location_service.dart';
 import 'core/network/api_client.dart';
-import 'data/models/user_model.dart';
 import 'data/repositories/auth_repository.dart';
 import 'data/repositories/salon_repository.dart';
 import 'data/repositories/appointment_repository.dart';

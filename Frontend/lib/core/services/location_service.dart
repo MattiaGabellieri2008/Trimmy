@@ -97,10 +97,8 @@ class LocationService extends ChangeNotifier {
 
       // 3. Acquisizione coordinate effettive con timeout
       final position = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.medium,
-          timeLimit: Duration(seconds: 8),
-        ),
+        desiredAccuracy: LocationAccuracy.medium,
+        timeLimit: const Duration(seconds: 8),
       );
 
       _currentLocation = UserLocation(

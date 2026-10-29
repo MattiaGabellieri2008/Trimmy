@@ -36,7 +36,7 @@ class FidelityWalletScreen extends StatelessWidget {
 
           // 2. Carnet & Pacchetti Prepagati (es. 5+1)
           Row(
-            mainAxisAlignment: MainAxisAlignment.between,
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               const Text(
                 'I Miei Carnet & Pacchetti (5+1)',
@@ -214,7 +214,7 @@ class _LuxuryVipCard extends StatelessWidget {
         children: [
           // Header Tessera
           Row(
-            mainAxisAlignment: MainAxisAlignment.between,
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               const Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -258,7 +258,7 @@ class _LuxuryVipCard extends StatelessWidget {
 
           // Punti & Sconto
           Row(
-            mainAxisAlignment: MainAxisAlignment.between,
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Column(
@@ -318,7 +318,7 @@ class _LuxuryVipCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
-                mainAxisAlignment: MainAxisAlignment.between,
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
                     'Prossimo livello: ${loyalty.nextThreshold} pt',
@@ -349,7 +349,7 @@ class _LuxuryVipCard extends StatelessWidget {
 
           // Titolare & Tasto Mostra QR
           Row(
-            mainAxisAlignment: MainAxisAlignment.between,
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -400,7 +400,7 @@ class _PackageCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.between,
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Expanded(
                 child: Text(

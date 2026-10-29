@@ -8,8 +8,10 @@ class AppColors {
   static const Color zinc900 = Color(0xFF18181B);
   static const Color zinc800 = Color(0xFF27272A);
   static const Color zinc700 = Color(0xFF3F3F46);
+  static const Color zinc600 = Color(0xFF52525B);
   static const Color zinc500 = Color(0xFF71717A);
   static const Color zinc400 = Color(0xFFA1A1AA);
+  static const Color zinc300 = Color(0xFFD4D4D8);
   static const Color zinc200 = Color(0xFFE4E4E7);
   static const Color zinc100 = Color(0xFFF4F4F5);
   static const Color zinc50 = Color(0xFFFAFAFA);

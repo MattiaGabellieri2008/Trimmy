@@ -171,7 +171,7 @@ class _PosCheckoutScreenState extends State<PosCheckoutScreen> {
                     border: Border.all(color: AppColors.zinc200),
                   ),
                   child: Row(
-                    mainAxisAlignment: MainAxisAlignment.between,
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -212,7 +212,7 @@ class _PosCheckoutScreenState extends State<PosCheckoutScreen> {
                 _summaryRow('Punti che accumulerà:', '+$_pointsEarned pt', AppColors.emerald),
                 const Divider(height: 16),
                 Row(
-                  mainAxisAlignment: MainAxisAlignment.between,
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     const Text('TOTALE DA INCASSARE', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 13)),
                     Text(
@@ -302,7 +302,7 @@ class _PosCheckoutScreenState extends State<PosCheckoutScreen> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 4),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.between,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(label, style: const TextStyle(fontSize: 11, color: AppColors.zinc500)),
           Text(value, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: color)),
@@ -401,7 +401,7 @@ class _PosCheckoutScreenState extends State<PosCheckoutScreen> {
               child: Column(
                 children: [
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.between,
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       const Text('Importo Totale:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                       Text('€${_total.toStringAsFixed(2)}', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w900)),
@@ -409,7 +409,7 @@ class _PosCheckoutScreenState extends State<PosCheckoutScreen> {
                   ),
                   const SizedBox(height: 4),
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.between,
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       const Text('Punti Accreditati:', style: TextStyle(fontSize: 12, color: AppColors.emerald)),
                       Text('+$_pointsEarned pt', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.emerald)),
