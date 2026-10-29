@@ -64,19 +64,19 @@ export default function DashboardLayout({
       <div className="flex-1 flex flex-col overflow-hidden bg-[#fafafa] dark:bg-zinc-900/60">
         
         {/* Header superiore: responsive per mobile, tablet e desktop */}
-        <header className="h-16 bg-white dark:bg-zinc-900 border-b border-zinc-200/60 dark:border-zinc-800 flex items-center justify-between px-3 sm:px-6 lg:px-8 z-20 shrink-0 gap-2 sm:gap-4 transition-colors">
+        <header className="h-14 sm:h-16 bg-white dark:bg-zinc-900 border-b border-zinc-200/60 dark:border-zinc-800 flex items-center justify-between px-2.5 sm:px-6 lg:px-8 z-20 shrink-0 gap-2 sm:gap-4 transition-colors">
           
           {/* Pulsante Hamburger + Logo su Mobile */}
-          <div className="flex items-center gap-2 md:hidden">
+          <div className="flex items-center gap-1.5 sm:gap-2 md:hidden shrink-0">
             <button
               onClick={() => setIsMobileMenuOpen(true)}
-              className="p-2 text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl transition-colors border border-zinc-200/70 dark:border-zinc-800"
+              className="p-1.5 sm:p-2 text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl transition-colors border border-zinc-200/70 dark:border-zinc-800 cursor-pointer"
               title="Menu di navigazione"
               aria-label="Apri menu"
             >
               <Menu className="w-4 h-4" />
             </button>
-            <span className="font-bold text-base tracking-tight text-zinc-900 dark:text-white">
+            <span className="font-bold text-sm sm:text-base tracking-tight text-zinc-900 dark:text-white">
               Trimmy.
             </span>
           </div>
@@ -87,7 +87,7 @@ export default function DashboardLayout({
           </div>
 
           {/* Azioni rapide a destra (Dark Mode Toggle + Notifiche) */}
-          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+          <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
             <ThemeToggleQuick compact />
             <NotificationBell />
           </div>
@@ -95,8 +95,8 @@ export default function DashboardLayout({
         
         {/* Contenuto Pagina allineato a max-w-7xl, con padding inferiore dinamico per non coprire il bottom nav mobile */}
         <main 
-          className="flex-1 overflow-y-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8 pb-28 md:pb-8"
-          style={{ paddingBottom: "max(6rem, calc(4.5rem + env(safe-area-inset-bottom, 0px)))" }}
+          className="flex-1 overflow-y-auto px-2 sm:px-6 lg:px-8 py-3 sm:py-6 lg:py-8 pb-28 md:pb-8"
+          style={{ paddingBottom: "max(5.5rem, calc(4.75rem + env(safe-area-inset-bottom, 0px)))" }}
         >
           {children}
         </main>

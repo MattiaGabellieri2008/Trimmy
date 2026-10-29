@@ -204,7 +204,7 @@ export function HeaderSearch() {
       
       {/* Campo di input integrato */}
       <div className="relative flex items-center">
-        <Search className="absolute left-3.5 w-4 h-4 text-zinc-400 pointer-events-none" strokeWidth={2} />
+        <Search className="absolute left-2.5 sm:left-3.5 w-3.5 h-3.5 sm:w-4 sm:h-4 text-zinc-400 pointer-events-none" strokeWidth={2} />
         <input 
           type="text" 
           value={query}
@@ -213,8 +213,8 @@ export function HeaderSearch() {
             setQuery(e.target.value);
             setIsOpen(true);
           }}
-          placeholder="Cerca clienti, trattamenti..." 
-          className="w-full pl-9 sm:pl-10 pr-8 sm:pr-9 py-2 bg-zinc-50 dark:bg-zinc-800/80 border border-zinc-200/80 dark:border-zinc-700 rounded-xl text-xs sm:text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 placeholder:truncate focus:outline-none focus:bg-white dark:focus:bg-zinc-800 focus:border-zinc-300 dark:focus:border-zinc-600 focus:ring-4 focus:ring-zinc-100 dark:focus:ring-zinc-800/50 transition-all shadow-2xs"
+          placeholder="Cerca clienti, servizi..." 
+          className="w-full pl-8 sm:pl-10 pr-7 sm:pr-9 py-1.5 sm:py-2 bg-zinc-50 dark:bg-zinc-800/80 border border-zinc-200/80 dark:border-zinc-700 rounded-xl text-xs sm:text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 placeholder:truncate focus:outline-none focus:bg-white dark:focus:bg-zinc-800 focus:border-zinc-300 dark:focus:border-zinc-600 focus:ring-4 focus:ring-zinc-100 dark:focus:ring-zinc-800/50 transition-all shadow-2xs"
         />
         {query && (
           <button 

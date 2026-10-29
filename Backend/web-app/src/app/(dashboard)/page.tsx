@@ -1149,176 +1149,185 @@ export default function AgendaPage() {
   }
 
   return (
-    <div className="max-w-7xl mx-auto space-y-6">
-       {/* 1. HEADER & CONTROLLI NAVIGAZIONE */}
-      <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 pb-4 border-b border-zinc-200/60">
-        <div>
-          <div className="flex items-center gap-2 sm:gap-3">
-            <h1 className="text-xl sm:text-2xl font-bold text-zinc-900 capitalize tracking-tight">
-              {formattedDateTitle}
-            </h1>
-            {isTodaySelected && viewMode === "giornaliera" && (
-              <span className="text-[10px] sm:text-[11px] font-semibold bg-zinc-900 text-white px-2 py-0.5 rounded-full">
-                Oggi
-              </span>
-            )}
+    <div className="max-w-7xl mx-auto space-y-4 sm:space-y-6">
+       {/* 1. HEADER & CONTROLLI NAVIGAZIONE (RESPONSIVE PER DESKTOP, ANDROID & IOS) */}
+      <header className="pb-3 sm:pb-4 border-b border-zinc-200/60 dark:border-zinc-800 space-y-3">
+        {/* Titolo e Data Header */}
+        <div className="flex items-center justify-between gap-2">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+              <h1 className="text-lg sm:text-2xl font-bold text-zinc-900 dark:text-white capitalize tracking-tight truncate">
+                {formattedDateTitle}
+              </h1>
+              {isTodaySelected && viewMode === "giornaliera" && (
+                <span className="text-[10px] sm:text-[11px] font-semibold bg-zinc-900 text-white dark:bg-white dark:text-zinc-900 px-2 py-0.5 rounded-full shrink-0">
+                  Oggi
+                </span>
+              )}
+            </div>
+            <p className="text-xs sm:text-sm text-zinc-500 dark:text-zinc-400 mt-0.5">
+              {appuntamenti.length} {appuntamenti.length === 1 ? "appuntamento trovato" : "appuntamenti trovati"}.
+            </p>
           </div>
-          <p className="text-xs sm:text-sm text-zinc-500 mt-0.5 sm:mt-1">
-            {appuntamenti.length} {appuntamenti.length === 1 ? "appuntamento trovato" : "appuntamenti trovati"}.
-          </p>
         </div>
 
-        {/* Pulsantiere Navigazione & Selezione Viste */}
-        <div className="flex flex-wrap items-center gap-2 sm:gap-2.5">
+        {/* Pulsantiere Navigazione, Selezione Viste & Azioni Rapide */}
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2.5">
           
-          {/* Frecce Indietro / Oggi / Avanti */}
-          <div className="flex items-center bg-white border border-zinc-200/80 rounded-lg p-0.5 shadow-xs">
-            <button 
-              onClick={handlePrev} 
-              className="p-1 sm:p-1.5 text-zinc-600 hover:text-zinc-900 hover:bg-zinc-50 rounded-md transition-colors"
-              title="Precedente"
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-            <button 
-              onClick={handleToday}
-              className="px-2.5 sm:px-3 py-1 text-xs font-medium text-zinc-700 hover:text-zinc-900 hover:bg-zinc-50 rounded-md transition-colors"
-            >
-              Oggi
-            </button>
-            <button 
-              onClick={handleNext} 
-              className="p-1 sm:p-1.5 text-zinc-600 hover:text-zinc-900 hover:bg-zinc-50 rounded-md transition-colors"
-              title="Successivo"
-            >
-              <ChevronRight className="w-4 h-4" />
-            </button>
+          {/* Controlli Data e Switch Viste */}
+          <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap sm:flex-nowrap">
+            {/* Frecce Indietro / Oggi / Avanti */}
+            <div className="flex items-center bg-white dark:bg-zinc-800 border border-zinc-200/80 dark:border-zinc-700 rounded-lg p-0.5 shadow-2xs shrink-0">
+              <button 
+                onClick={handlePrev} 
+                className="p-1 sm:p-1.5 text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-50 dark:hover:bg-zinc-700 rounded-md transition-colors cursor-pointer"
+                title="Precedente"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <button 
+                onClick={handleToday}
+                className="px-2 sm:px-3 py-1 text-xs font-medium text-zinc-700 dark:text-zinc-200 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-50 dark:hover:bg-zinc-700 rounded-md transition-colors cursor-pointer"
+              >
+                Oggi
+              </button>
+              <button 
+                onClick={handleNext} 
+                className="p-1 sm:p-1.5 text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-50 dark:hover:bg-zinc-700 rounded-md transition-colors cursor-pointer"
+                title="Successivo"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Date Picker Diretto */}
+            <div className="relative shrink-0">
+              <input 
+                type="date" 
+                value={selectedDate.toISOString().split("T")[0]}
+                onChange={(e) => {
+                  if (e.target.value) {
+                    setSelectedDate(new Date(e.target.value + "T12:00:00"));
+                  }
+                }}
+                className="opacity-0 absolute inset-0 w-full h-full cursor-pointer z-10"
+              />
+              <button className="flex items-center gap-1.5 bg-white dark:bg-zinc-800 border border-zinc-200/80 dark:border-zinc-700 px-2 sm:px-3 py-1.5 rounded-lg text-xs font-medium text-zinc-700 dark:text-zinc-200 shadow-2xs hover:bg-zinc-50 dark:hover:bg-zinc-700 cursor-pointer">
+                <CalendarDays className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-zinc-500 dark:text-zinc-400" />
+                <span className="hidden xs:inline">Data</span>
+              </button>
+            </div>
+
+            {/* Selettore Modalità Vista: Giornaliera, Settimanale, Mensile, Staff */}
+            <div className="flex-1 sm:flex-initial bg-zinc-100 dark:bg-zinc-800 p-0.5 rounded-lg flex items-center border border-zinc-200/60 dark:border-zinc-700 text-xs">
+              <button
+                onClick={() => setViewMode("giornaliera")}
+                className={`flex-1 sm:flex-initial px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-md font-medium transition-all text-center cursor-pointer ${
+                  viewMode === "giornaliera"
+                    ? "bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white shadow-xs"
+                    : "text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white"
+                }`}
+              >
+                Giorno
+              </button>
+              <button
+                onClick={() => setViewMode("settimanale")}
+                className={`flex-1 sm:flex-initial px-2 sm:px-3 py-1 sm:py-1.5 rounded-md font-medium transition-all text-center cursor-pointer ${
+                  viewMode === "settimanale"
+                    ? "bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white shadow-xs"
+                    : "text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white"
+                }`}
+              >
+                Settimana
+              </button>
+              <button
+                onClick={() => setViewMode("mensile")}
+                className={`flex-1 sm:flex-initial px-2 sm:px-3 py-1 sm:py-1.5 rounded-md font-medium transition-all text-center cursor-pointer ${
+                  viewMode === "mensile"
+                    ? "bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white shadow-xs"
+                    : "text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white"
+                }`}
+              >
+                Mese
+              </button>
+              <button
+                onClick={() => setViewMode("staff")}
+                className={`flex-1 sm:flex-initial px-2 sm:px-3 py-1 sm:py-1.5 rounded-md font-medium transition-all text-center cursor-pointer ${
+                  viewMode === "staff"
+                    ? "bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white shadow-xs"
+                    : "text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white"
+                }`}
+              >
+                Staff
+              </button>
+            </div>
           </div>
 
-          {/* Date Picker Diretto */}
-          <div className="relative">
-            <input 
-              type="date" 
-              value={selectedDate.toISOString().split("T")[0]}
-              onChange={(e) => {
-                if (e.target.value) {
-                  setSelectedDate(new Date(e.target.value + "T12:00:00"));
-                }
+          {/* Azioni Rapide: Prenota, Pausa/Ferie, Cassa Banco, Chiusura Z */}
+          <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto scrollbar-hide py-0.5">
+            {/* Nuovo Appuntamento */}
+            <button 
+              onClick={() => {
+                setFormDate(selectedDate ? selectedDate.toISOString().split("T")[0] : new Date().toISOString().split("T")[0]);
+                setDrawerMode("APPOINTMENT");
+                setIsDrawerOpen(true);
               }}
-              className="opacity-0 absolute inset-0 w-full h-full cursor-pointer z-10"
-            />
-            <button className="flex items-center gap-1.5 bg-white border border-zinc-200/80 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-lg text-xs font-medium text-zinc-700 shadow-xs hover:bg-zinc-50">
-              <CalendarDays className="w-4 h-4 text-zinc-500" />
-              <span className="hidden xs:inline">Data</span>
+              className="flex items-center gap-1.5 bg-zinc-900 text-white dark:bg-white dark:text-zinc-900 px-3 py-1.5 sm:py-2 rounded-lg text-xs font-semibold hover:bg-zinc-800 dark:hover:bg-zinc-100 transition-colors shadow-2xs shrink-0 cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              <span>Prenota</span>
+            </button>
+
+            {/* Blocca Orario (Pausa / Ferie / Permesso) */}
+            <button 
+              onClick={() => {
+                const dStr = selectedDate ? selectedDate.toISOString().split("T")[0] : new Date().toISOString().split("T")[0];
+                setBlockDate(dStr);
+                if (activeStaff.length > 0 && !blockStaffId) {
+                  setBlockStaffId(activeStaff[0].id);
+                }
+                setDrawerMode("BLOCK");
+                setIsDrawerOpen(true);
+              }}
+              className="flex items-center gap-1.5 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-950/60 text-amber-900 dark:text-amber-200 border border-amber-300/80 dark:border-amber-700/80 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-lg text-xs font-bold transition-all shadow-2xs shrink-0 cursor-pointer"
+              title="Blocca orario per pausa pranzo, ferie o permessi staff"
+            >
+              <Coffee className="w-3.5 h-3.5 text-amber-700 dark:text-amber-400" />
+              <span><span className="hidden sm:inline">Pausa / </span>Ferie</span>
+            </button>
+
+            {/* Punto Cassa POS Rapido */}
+            <button
+              onClick={() => {
+                setCheckoutInitialData(null);
+                setIsCheckoutOpen(true);
+              }}
+              className="flex items-center gap-1.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-zinc-950 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-lg text-xs font-bold transition-all shadow-2xs shrink-0 cursor-pointer"
+              title="Punto Cassa per vendita diretta e scontrini da banco"
+            >
+              <Receipt className="w-3.5 h-3.5" />
+              <span><span className="hidden sm:inline">Cassa </span>Banco</span>
+            </button>
+
+            {/* Chiusura Cassa Fiscale (Report Z) */}
+            <button
+              onClick={() => setIsDailyClosingOpen(true)}
+              className="flex items-center gap-1.5 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-lg text-xs font-semibold transition-colors shadow-2xs shrink-0 cursor-pointer"
+              title="Chiusura di cassa giornaliera (Report Z)"
+            >
+              <Lock className="w-3.5 h-3.5 text-amber-600" />
+              <span><span className="hidden md:inline">Chiusura </span>Z</span>
+            </button>
+
+            {/* Logout (solo Desktop) */}
+            <button 
+              onClick={handleLogout}
+              className="p-1.5 sm:p-2 text-zinc-400 hover:text-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition-colors hidden sm:flex shrink-0 cursor-pointer"
+              title="Disconnetti"
+            >
+              <LogOut className="w-4 h-4" />
             </button>
           </div>
-
-          {/* Selettore Modalità Vista: Giornaliera, Settimanale, Mensile, Staff */}
-          <div className="bg-zinc-100 p-0.5 rounded-lg flex items-center border border-zinc-200/60 text-xs overflow-x-auto max-w-full">
-            <button
-              onClick={() => setViewMode("giornaliera")}
-              className={`px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-md font-medium transition-all ${
-                viewMode === "giornaliera"
-                  ? "bg-white text-zinc-900 shadow-xs"
-                  : "text-zinc-600 hover:text-zinc-900"
-              }`}
-            >
-              Giorno
-            </button>
-            <button
-              onClick={() => setViewMode("settimanale")}
-              className={`px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-md font-medium transition-all ${
-                viewMode === "settimanale"
-                  ? "bg-white text-zinc-900 shadow-xs"
-                  : "text-zinc-600 hover:text-zinc-900"
-              }`}
-            >
-              Settimana
-            </button>
-            <button
-              onClick={() => setViewMode("mensile")}
-              className={`px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-md font-medium transition-all ${
-                viewMode === "mensile"
-                  ? "bg-white text-zinc-900 shadow-xs"
-                  : "text-zinc-600 hover:text-zinc-900"
-              }`}
-            >
-              Mese
-            </button>
-            <button
-              onClick={() => setViewMode("staff")}
-              className={`px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-md font-medium transition-all ${
-                viewMode === "staff"
-                  ? "bg-white text-zinc-900 shadow-xs"
-                  : "text-zinc-600 hover:text-zinc-900"
-              }`}
-            >
-              Staff
-            </button>
-          </div>
-
-          {/* Nuovo Appuntamento */}
-          <button 
-            onClick={() => {
-              setFormDate(selectedDate ? selectedDate.toISOString().split("T")[0] : new Date().toISOString().split("T")[0]);
-              setDrawerMode("APPOINTMENT");
-              setIsDrawerOpen(true);
-            }}
-            className="flex items-center gap-1.5 sm:gap-2 bg-zinc-900 text-white px-3 sm:px-3.5 py-1.5 sm:py-2 rounded-lg text-xs font-semibold hover:bg-zinc-800 transition-colors shadow-xs cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            Prenota
-          </button>
-
-          {/* Blocca Orario (Pausa / Ferie / Permesso) */}
-          <button 
-            onClick={() => {
-              const dStr = selectedDate ? selectedDate.toISOString().split("T")[0] : new Date().toISOString().split("T")[0];
-              setBlockDate(dStr);
-              if (activeStaff.length > 0 && !blockStaffId) {
-                setBlockStaffId(activeStaff[0].id);
-              }
-              setDrawerMode("BLOCK");
-              setIsDrawerOpen(true);
-            }}
-            className="flex items-center gap-1.5 sm:gap-2 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300/80 px-3 sm:px-3.5 py-1.5 sm:py-2 rounded-lg text-xs font-bold transition-all shadow-2xs cursor-pointer"
-            title="Blocca orario per pausa pranzo, ferie o permessi staff"
-          >
-            <Coffee className="w-4 h-4 text-amber-700" />
-            <span className="hidden sm:inline">Pausa /</span> Ferie
-          </button>
-
-          {/* Punto Cassa POS Rapido */}
-          <button
-            onClick={() => {
-              setCheckoutInitialData(null);
-              setIsCheckoutOpen(true);
-            }}
-            className="flex items-center gap-1.5 sm:gap-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-zinc-950 px-3 sm:px-3.5 py-1.5 sm:py-2 rounded-lg text-xs font-bold transition-all shadow-xs cursor-pointer"
-            title="Punto Cassa per vendita diretta e scontrini da banco"
-          >
-            <Receipt className="w-4 h-4" />
-            <span className="hidden sm:inline">Cassa</span> Banco
-          </button>
-
-          {/* Chiusura Cassa Fiscale (Report Z) */}
-          <button
-            onClick={() => setIsDailyClosingOpen(true)}
-            className="flex items-center gap-1.5 sm:gap-2 bg-zinc-100 hover:bg-zinc-200 text-zinc-800 border border-zinc-200 px-3 sm:px-3.5 py-1.5 sm:py-2 rounded-lg text-xs font-semibold transition-colors shadow-2xs cursor-pointer"
-            title="Chiusura di cassa giornaliera (Report Z)"
-          >
-            <Lock className="w-3.5 h-3.5 text-amber-600" />
-            <span className="hidden md:inline">Chiusura</span> Z
-          </button>
-
-          {/* Logout */}
-          <button 
-            onClick={handleLogout}
-            className="p-1.5 sm:p-2 text-zinc-400 hover:text-zinc-900 hover:bg-zinc-100 rounded-lg transition-colors"
-            title="Disconnetti"
-          >
-            <LogOut className="w-4 h-4" />
-          </button>
         </div>
       </header>
 
@@ -1326,7 +1335,7 @@ export default function AgendaPage() {
       <SyncBanner tenantId={salonTenantId || currentUser?.uid || "tenant-default"} />
 
       {/* ─── STRISCIA SETTIMANALE A BOLLE (TOUCH-FIRST MOBILE & TABLET) ─── */}
-      <div className="bg-white rounded-2xl border border-zinc-200/70 p-2 sm:p-2.5 shadow-2xs mb-4">
+      <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200/70 dark:border-zinc-800 p-1.5 sm:p-2.5 shadow-2xs mb-4">
         <div className="flex items-center justify-between gap-1 sm:gap-2">
           {/* Tasto Settimana Precedente */}
           <button
@@ -1335,14 +1344,14 @@ export default function AgendaPage() {
               d.setDate(d.getDate() - 7);
               setSelectedDate(d);
             }}
-            className="p-1.5 sm:p-2 text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 rounded-xl transition cursor-pointer shrink-0"
+            className="p-1 sm:p-2 text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl transition cursor-pointer shrink-0"
             title="Settimana precedente"
           >
             <ChevronLeft className="w-4 h-4" />
           </button>
 
           {/* Griglia 7 Bolle Giorno */}
-          <div className="flex-1 grid grid-cols-7 gap-1 sm:gap-1.5 py-0.5 select-none">
+          <div className="flex-1 grid grid-cols-7 gap-1 sm:gap-1.5 py-0.5 select-none min-w-0">
             {mobileBubbleDays.map((d) => {
               const isSelected = selectedDate.toDateString() === d.toDateString();
               const isToday = todayDate ? todayDate.toDateString() === d.toDateString() : false;
@@ -1359,33 +1368,35 @@ export default function AgendaPage() {
                 <button
                   key={d.toISOString()}
                   onClick={() => setSelectedDate(d)}
-                  className={`flex flex-col items-center justify-center py-1.5 sm:py-2.5 px-0.5 sm:px-1 rounded-xl transition-all cursor-pointer relative ${
+                  className={`flex flex-col items-center justify-between min-h-[56px] sm:min-h-[64px] py-1.5 px-0.5 sm:px-1 rounded-xl transition-all cursor-pointer relative min-w-0 ${
                     isSelected
-                      ? "bg-zinc-900 text-white shadow-md ring-2 ring-zinc-900 font-bold scale-102"
-                      : "bg-zinc-50/70 hover:bg-zinc-100 text-zinc-700 border border-zinc-200/50"
+                      ? "bg-zinc-900 text-white dark:bg-white dark:text-zinc-900 shadow-md ring-2 ring-zinc-900 dark:ring-white font-bold scale-102"
+                      : "bg-zinc-50/70 dark:bg-zinc-800/50 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-200 border border-zinc-200/50 dark:border-zinc-700/60"
                   }`}
                 >
-                  <span className={`text-[9px] sm:text-[11px] font-semibold tracking-wider ${
-                    isSelected ? "text-zinc-300" : "text-zinc-400"
+                  <span className={`text-[9px] sm:text-[11px] font-semibold tracking-wider truncate w-full text-center ${
+                    isSelected ? "text-zinc-300 dark:text-zinc-700" : "text-zinc-400 dark:text-zinc-500"
                   }`}>
                     {dayName}
                   </span>
-                  <span className={`text-xs sm:text-base font-extrabold mt-0.5 ${
-                    isSelected ? "text-white" : "text-zinc-900"
+                  <span className={`text-xs sm:text-base font-extrabold leading-tight ${
+                    isSelected ? "text-white dark:text-zinc-900" : "text-zinc-900 dark:text-white"
                   }`}>
                     {dayNum}
                   </span>
 
                   {/* Indicatori: Appuntamenti & Badge Oggi */}
-                  <div className="flex items-center gap-1 mt-0.5 sm:mt-1">
+                  <div className="flex items-center justify-center gap-1 h-3">
                     {dayApptCount > 0 && (
                       <span className={`w-1.5 h-1.5 rounded-full ${
-                        isSelected ? "bg-amber-400" : "bg-zinc-900"
+                        isSelected ? "bg-amber-400 dark:bg-amber-500" : "bg-zinc-900 dark:bg-white"
                       }`} />
                     )}
                     {isToday && (
-                      <span className={`text-[8px] sm:text-[9px] font-mono font-bold uppercase px-1 rounded ${
-                        isSelected ? "bg-amber-500 text-zinc-950" : "bg-amber-100 text-amber-800"
+                      <span className={`text-[7px] sm:text-[9px] font-mono font-bold uppercase px-0.5 sm:px-1 rounded leading-tight ${
+                        isSelected 
+                          ? "bg-amber-500 text-zinc-950" 
+                          : "bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300"
                       }`}>
                         Oggi
                       </span>
@@ -1403,7 +1414,7 @@ export default function AgendaPage() {
               d.setDate(d.getDate() + 7);
               setSelectedDate(d);
             }}
-            className="p-1.5 sm:p-2 text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 rounded-xl transition cursor-pointer shrink-0"
+            className="p-1 sm:p-2 text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl transition cursor-pointer shrink-0"
             title="Settimana successiva"
           >
             <ChevronRight className="w-4 h-4" />
@@ -1433,7 +1444,7 @@ export default function AgendaPage() {
             </div>
           </div>
 
-          <div className="divide-y divide-zinc-100 overflow-y-auto max-h-[720px] scroll-smooth">
+          <div className="divide-y divide-zinc-100 dark:divide-zinc-800 md:overflow-y-auto md:max-h-[720px] scroll-smooth">
             {TIME_SLOTS.map((time) => {
               const currentHour = parseInt(time.split(":")[0]);
               const slotAppointments = appuntamenti.filter((appt) => {
@@ -2088,7 +2099,7 @@ export default function AgendaPage() {
 
       {/* ─── FLOATING ACTION TOAST CON UNDO & PROMPT NOTIFICHE ─── */}
       {actionToast && (
-        <div className="fixed bottom-6 right-6 z-50 max-w-md w-[calc(100vw-3rem)] bg-zinc-900 text-white rounded-2xl p-4 shadow-2xl border border-zinc-700/60 animate-in slide-in-from-bottom-5 duration-200">
+        <div className="fixed bottom-[calc(4.75rem+env(safe-area-inset-bottom,0px))] md:bottom-6 right-3 sm:right-6 z-50 max-w-md w-[calc(100vw-1.5rem)] sm:w-[calc(100vw-3rem)] bg-zinc-900 text-white rounded-2xl p-3.5 sm:p-4 shadow-2xl border border-zinc-700/60 animate-in slide-in-from-bottom-5 duration-200">
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-center gap-2.5 min-w-0">
               <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
@@ -2976,15 +2987,16 @@ export default function AgendaPage() {
         salonName={salonNameState}
       />
 
-      {/* 7. FLOATING ACTION BUTTON (FAB) PER SMARTPHONE */}
+      {/* 7. FLOATING ACTION BUTTON (FAB) PER SMARTPHONE - Posizionato sopra la Bottom Navigation Bar */}
       <button
         onClick={() => {
           setFormDate(selectedDate ? selectedDate.toISOString().split("T")[0] : new Date().toISOString().split("T")[0]);
           setDrawerMode("APPOINTMENT");
           setIsDrawerOpen(true);
         }}
-        className="sm:hidden fixed bottom-6 right-5 z-40 w-14 h-14 rounded-full bg-zinc-900 text-white shadow-2xl flex items-center justify-center hover:bg-zinc-800 active:scale-90 transition-all cursor-pointer border-2 border-white/20"
+        className="md:hidden fixed bottom-[calc(4.75rem+env(safe-area-inset-bottom,0px))] right-4 z-40 w-13 h-13 rounded-full bg-zinc-900 text-white dark:bg-white dark:text-zinc-900 shadow-xl flex items-center justify-center hover:bg-zinc-800 dark:hover:bg-zinc-100 active:scale-90 transition-all cursor-pointer border-2 border-white/20 dark:border-zinc-800"
         title="Nuova Prenotazione"
+        aria-label="Nuova Prenotazione"
       >
         <Plus className="w-6 h-6" />
       </button>
