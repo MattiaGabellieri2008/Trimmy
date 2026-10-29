@@ -19,6 +19,7 @@ class AppColors {
 
   // Accenti Primari
   static const Color gold = Color(0xFFD97706);
+  static const Color accentOrange = gold;
   static const Color goldLight = Color(0xFFF59E0B);
   static const Color goldSurface = Color(0xFFFEF3C7);
 
@@ -27,6 +28,7 @@ class AppColors {
   static const Color indigoLight = Color(0xFFEEF2FF);
   
   static const Color emerald = Color(0xFF059669);
+  static const Color emeraldGreen = emerald;
   static const Color emeraldLight = Color(0xFFECFDF5);
   
   static const Color rose = Color(0xFFE11D48);

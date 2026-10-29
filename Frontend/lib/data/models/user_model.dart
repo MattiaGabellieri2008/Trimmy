@@ -11,6 +11,8 @@ class AppUser {
   final String? phone;
   final UserRole role;
   final String? salonId;
+  final String? salonName;
+  final String? photoUrl;
 
   const AppUser({
     required this.id,
@@ -19,6 +21,8 @@ class AppUser {
     this.phone,
     required this.role,
     this.salonId,
+    this.salonName,
+    this.photoUrl,
   });
 
   bool get isSalonOwner => role == UserRole.salon;
@@ -27,12 +31,14 @@ class AppUser {
 
   factory AppUser.fromJson(Map<String, dynamic> json) {
     return AppUser(
-      id: json['id'] as String? ?? '',
+      id: json['id'] as String? ?? json['uid'] as String? ?? '',
       email: json['email'] as String? ?? '',
-      displayName: json['displayName'] as String? ?? 'Utente Trimmy',
+      displayName: json['displayName'] as String? ?? json['name'] as String? ?? 'Utente Trimmy',
       phone: json['phone'] as String?,
       role: _parseRole(json['role'] as String?),
-      salonId: json['salonId'] as String?,
+      salonId: json['salonId'] as String? ?? json['tenantId'] as String?,
+      salonName: json['salonName'] as String?,
+      photoUrl: json['photoUrl'] as String?,
     );
   }
 
@@ -44,12 +50,15 @@ class AppUser {
       'phone': phone,
       'role': role.name,
       'salonId': salonId,
+      'salonName': salonName,
+      'photoUrl': photoUrl,
     };
   }
 
   static UserRole _parseRole(String? roleStr) {
     switch (roleStr?.toLowerCase()) {
       case 'salon':
+      case 'salone':
       case 'titolare':
         return UserRole.salon;
       case 'staff':

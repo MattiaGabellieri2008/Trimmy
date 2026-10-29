@@ -1,12 +1,10 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import '../../core/theme/app_colors.dart';
-import '../../data/models/user_model.dart';
-import '../../data/repositories/auth_repository.dart';
 import 'agenda_screen.dart';
 import 'pos_checkout_screen.dart';
+import 'inventory_screen.dart';
 import 'clients_crm_screen.dart';
+import 'salon_profile_screen.dart';
 
 class SalonMainScreen extends StatefulWidget {
   const SalonMainScreen({super.key});
@@ -21,7 +19,9 @@ class _SalonMainScreenState extends State<SalonMainScreen> {
   final List<Widget> _screens = const [
     SalonAgendaScreen(),
     PosCheckoutScreen(),
+    InventoryScreen(),
     SalonClientsCrmScreen(),
+    SalonProfileScreen(),
   ];
 
   @override
@@ -36,6 +36,11 @@ class _SalonMainScreenState extends State<SalonMainScreen> {
         child: BottomNavigationBar(
           currentIndex: _currentIndex,
           onTap: (index) => setState(() => _currentIndex = index),
+          type: BottomNavigationBarType.fixed,
+          selectedItemColor: AppColors.obsidianBlack,
+          unselectedItemColor: AppColors.zinc400,
+          selectedLabelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11),
+          unselectedLabelStyle: const TextStyle(fontSize: 10),
           items: const [
             BottomNavigationBarItem(
               icon: Icon(Icons.calendar_month_outlined),
@@ -45,28 +50,26 @@ class _SalonMainScreenState extends State<SalonMainScreen> {
             BottomNavigationBarItem(
               icon: Icon(Icons.point_of_sale_outlined),
               activeIcon: Icon(Icons.point_of_sale),
-              label: 'Punto Cassa',
+              label: 'Cassa POS',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.inventory_2_outlined),
+              activeIcon: Icon(Icons.inventory_2),
+              label: 'Magazzino',
             ),
             BottomNavigationBarItem(
               icon: Icon(Icons.people_alt_outlined),
               activeIcon: Icon(Icons.people_alt),
-              label: 'CRM Clienti',
+              label: 'Clienti',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.tune_outlined),
+              activeIcon: Icon(Icons.tune),
+              label: 'Gestione',
             ),
           ],
         ),
       ),
-      floatingActionButton: kDebugMode
-          ? FloatingActionButton.extended(
-              onPressed: () {
-                // Switch rapido per test debug al ruolo Client
-                context.read<AuthRepository>().switchRole(UserRole.client);
-              },
-              backgroundColor: AppColors.obsidianBlack,
-              foregroundColor: AppColors.white,
-              icon: const Icon(Icons.person, size: 18),
-              label: const Text('Passa a Cliente (Debug)', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-            )
-          : null,
     );
   }
 }

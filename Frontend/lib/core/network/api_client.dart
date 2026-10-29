@@ -64,6 +64,8 @@ class ApiClient {
     }
   }
 
+  Future<void> clearAuthToken() => setAuthToken(null);
+
   Map<String, String> _buildHeaders() {
     final headers = <String, String>{
       'Content-Type': 'application/json',

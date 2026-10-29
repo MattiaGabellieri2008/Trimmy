@@ -1,12 +1,9 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import '../../core/theme/app_colors.dart';
-import '../../data/models/user_model.dart';
-import '../../data/repositories/auth_repository.dart';
 import 'marketplace_screen.dart';
 import 'appointments_screen.dart';
 import 'fidelity_wallet_screen.dart';
+import 'client_profile_screen.dart';
 
 class ClientMainScreen extends StatefulWidget {
   const ClientMainScreen({super.key});
@@ -22,6 +19,7 @@ class _ClientMainScreenState extends State<ClientMainScreen> {
     MarketplaceScreen(),
     AppointmentsScreen(),
     FidelityWalletScreen(),
+    ClientProfileScreen(),
   ];
 
   @override
@@ -36,6 +34,11 @@ class _ClientMainScreenState extends State<ClientMainScreen> {
         child: BottomNavigationBar(
           currentIndex: _currentIndex,
           onTap: (index) => setState(() => _currentIndex = index),
+          type: BottomNavigationBarType.fixed,
+          selectedItemColor: AppColors.obsidianBlack,
+          unselectedItemColor: AppColors.zinc400,
+          selectedLabelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11),
+          unselectedLabelStyle: const TextStyle(fontSize: 10),
           items: const [
             BottomNavigationBarItem(
               icon: Icon(Icons.explore_outlined),
@@ -52,21 +55,14 @@ class _ClientMainScreenState extends State<ClientMainScreen> {
               activeIcon: Icon(Icons.stars),
               label: 'Fidelity VIP',
             ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.person_outline),
+              activeIcon: Icon(Icons.person),
+              label: 'Profilo',
+            ),
           ],
         ),
       ),
-      floatingActionButton: kDebugMode
-          ? FloatingActionButton.extended(
-              onPressed: () {
-                // Switch rapido per test debug al ruolo Salon
-                context.read<AuthRepository>().switchRole(UserRole.salon);
-              },
-              backgroundColor: AppColors.obsidianBlack,
-              foregroundColor: AppColors.white,
-              icon: const Icon(Icons.storefront, size: 18),
-              label: const Text('Passa a Salone (Debug)', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-            )
-          : null,
     );
   }
 }

@@ -10,6 +10,7 @@ import 'data/repositories/auth_repository.dart';
 import 'data/repositories/salon_repository.dart';
 import 'data/repositories/appointment_repository.dart';
 import 'data/repositories/fidelity_repository.dart';
+import 'data/repositories/inventory_repository.dart';
 import 'ui/auth/login_screen.dart';
 import 'ui/client/client_main_screen.dart';
 import 'ui/salon/salon_main_screen.dart';
@@ -38,6 +39,7 @@ void main() async {
         ChangeNotifierProvider(create: (_) => AppointmentRepository()),
         ChangeNotifierProvider(create: (_) => FidelityRepository()),
         ChangeNotifierProvider(create: (_) => LocationService()),
+        ChangeNotifierProvider(create: (_) => InventoryRepository()),
       ],
       child: const TrimmyApp(),
     ),
@@ -67,11 +69,14 @@ class AppRootRouter extends StatelessWidget {
   Widget build(BuildContext context) {
     final authRepo = context.watch<AuthRepository>();
 
+    // 1. Schermata iniziale di Login/Sign In se non autenticato
     if (!authRepo.isAuthenticated) {
       return const LoginScreen();
     }
 
     final user = authRepo.currentUser;
+
+    // 2. Netta separazione tra parte Salone e parte Cliente
     if (user != null && user.isSalonOwner) {
       return const SalonMainScreen();
     }
