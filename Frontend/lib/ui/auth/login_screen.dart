@@ -245,6 +245,32 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                 : const Text('Accedi a Trimmy', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
           ),
         ),
+
+        const SizedBox(height: 14),
+
+        // Separatore Oppure con Google
+        const Row(
+          children: [
+            Expanded(child: Divider(color: AppColors.zinc200)),
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: 10),
+              child: Text(
+                'OPPURE CONTINUA CON',
+                style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: AppColors.zinc400, letterSpacing: 0.5),
+              ),
+            ),
+            Expanded(child: Divider(color: AppColors.zinc200)),
+          ],
+        ),
+
+        const SizedBox(height: 14),
+
+        // Tasto Accedi con Google
+        _buildGoogleButton(
+          label: 'Accedi con Google',
+          onPressed: () => _handleGoogleAuth(authRepo, isSignup: false),
+          isLoading: authRepo.isLoading,
+        ),
       ],
     );
   }
@@ -390,8 +416,111 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                   ),
           ),
         ),
+
+        const SizedBox(height: 14),
+
+        // Separatore Oppure con Google
+        const Row(
+          children: [
+            Expanded(child: Divider(color: AppColors.zinc200)),
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: 10),
+              child: Text(
+                'OPPURE CONTINUA CON',
+                style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: AppColors.zinc400, letterSpacing: 0.5),
+              ),
+            ),
+            Expanded(child: Divider(color: AppColors.zinc200)),
+          ],
+        ),
+
+        const SizedBox(height: 14),
+
+        // Tasto Registrati con Google
+        _buildGoogleButton(
+          label: isSalon ? 'Registrati come Salone con Google' : 'Registrati con Google',
+          onPressed: () => _handleGoogleAuth(authRepo, isSignup: true),
+          isLoading: authRepo.isLoading,
+        ),
       ],
     );
+  }
+
+  Widget _buildGoogleButton({
+    required String label,
+    required VoidCallback onPressed,
+    required bool isLoading,
+  }) {
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton(
+        onPressed: isLoading ? null : onPressed,
+        style: OutlinedButton.styleFrom(
+          backgroundColor: AppColors.white,
+          foregroundColor: AppColors.zinc800,
+          side: const BorderSide(color: AppColors.zinc300, width: 1.2),
+          padding: const EdgeInsets.symmetric(vertical: 13, horizontal: 16),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          elevation: 0,
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            _buildGoogleLogo(),
+            const SizedBox(width: 10),
+            Text(
+              label,
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.zinc900),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGoogleLogo() {
+    return Container(
+      width: 22,
+      height: 22,
+      decoration: BoxDecoration(
+        color: AppColors.white,
+        shape: BoxShape.circle,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.06),
+            blurRadius: 3,
+            offset: const Offset(0, 1),
+          ),
+        ],
+      ),
+      child: Center(
+        child: CustomPaint(
+          size: const Size(16, 16),
+          painter: _GoogleLogoPainter(),
+        ),
+      ),
+    );
+  }
+
+  void _handleGoogleAuth(AuthRepository authRepo, {required bool isSignup}) async {
+    final success = await authRepo.signInWithGoogle(
+      selectedRole: _selectedRole,
+      salonName: _regSalonNameController.text.trim().isNotEmpty
+          ? _regSalonNameController.text.trim()
+          : null,
+      address: _regAddressController.text.trim().isNotEmpty
+          ? _regAddressController.text.trim()
+          : null,
+    );
+
+    if (!success && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(authRepo.errorMessage ?? 'Errore durante l\'accesso con Google'),
+          backgroundColor: AppColors.rose,
+        ),
+      );
+    }
   }
 
   Widget _buildTextField({
@@ -483,4 +612,55 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
       );
     }
   }
+}
+
+class _GoogleLogoPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final double w = size.width;
+    final double h = size.height;
+    final center = Offset(w / 2, h / 2);
+    final radius = w / 2;
+    final strokeWidth = w * 0.22;
+
+    final rect = Rect.fromCircle(center: center, radius: radius - strokeWidth / 2);
+
+    final bluePaint = Paint()
+      ..color = const Color(0xFF4285F4)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth;
+
+    final greenPaint = Paint()
+      ..color = const Color(0xFF34A853)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth;
+
+    final yellowPaint = Paint()
+      ..color = const Color(0xFFFBBC05)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth;
+
+    final redPaint = Paint()
+      ..color = const Color(0xFFEA4335)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth;
+
+    // Archi con i 4 colori ufficiali Google
+    canvas.drawArc(rect, -0.6, 1.4, false, bluePaint);
+    canvas.drawArc(rect, 0.8, 1.3, false, greenPaint);
+    canvas.drawArc(rect, 2.1, 1.2, false, yellowPaint);
+    canvas.drawArc(rect, 3.3, 1.6, false, redPaint);
+
+    // Barra orizzontale centrale blu di Google
+    final barPaint = Paint()
+      ..color = const Color(0xFF4285F4)
+      ..style = PaintingStyle.fill;
+    canvas.drawRect(
+      Rect.fromLTWH(center.dx - strokeWidth / 4, center.dy - strokeWidth / 2, radius * 0.88, strokeWidth),
+      barPaint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
