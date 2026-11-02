@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../core/theme/app_colors.dart';
+import '../../data/repositories/auth_repository.dart';
+import '../../data/repositories/fidelity_repository.dart';
 import 'marketplace_screen.dart';
 import 'appointments_screen.dart';
 import 'fidelity_wallet_screen.dart';
@@ -21,6 +24,17 @@ class _ClientMainScreenState extends State<ClientMainScreen> {
     FidelityWalletScreen(),
     ClientProfileScreen(),
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final user = context.read<AuthRepository>().currentUser;
+      if (user != null && user.id.isNotEmpty) {
+        context.read<FidelityRepository>().syncWithFirestoreUser(user.id);
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {

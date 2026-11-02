@@ -45,10 +45,12 @@ class AppUser {
   Map<String, dynamic> toJson() {
     return {
       'id': id,
+      'uid': id,
       'email': email,
       'displayName': displayName,
+      'name': displayName,
       'phone': phone,
-      'role': role.name,
+      'role': role == UserRole.salon ? 'salone' : (role == UserRole.staff ? 'staff' : 'cliente'),
       'salonId': salonId,
       'salonName': salonName,
       'photoUrl': photoUrl,

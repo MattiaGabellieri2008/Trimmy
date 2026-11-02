@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/fidelity_model.dart';
@@ -73,6 +74,31 @@ class FidelityRepository extends ChangeNotifier {
       await prefs.setString(_packagesStorageKey, jsonEncode(_clientPackages.map((p) => p.toJson()).toList()));
     } catch (e) {
       debugPrint('Errore salvataggio fidelity su disco: $e');
+    }
+  }
+
+  Future<void> syncWithFirestoreUser(String customerId, {String salonId = 'salon-1'}) async {
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('saloni')
+          .doc(salonId)
+          .collection('loyalty_customers')
+          .doc(customerId)
+          .get();
+
+      if (doc.exists && doc.data() != null) {
+        final data = doc.data()!;
+        final balance = (data['pointsBalance'] as num?)?.toInt() ?? 0;
+        final totalEarned = (data['totalPointsEarned'] as num?)?.toInt() ?? balance;
+        _clientLoyalty = CustomerLoyalty.fromPoints(customerId, balance, totalEarned);
+      } else {
+        // Se non esiste ancora per questo nuovo utente, inizializza il profilo fidelity
+        _clientLoyalty = CustomerLoyalty.fromPoints(customerId, 0, 0);
+      }
+      await _saveToDisk();
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Firestore loyalty sync fallback: $e');
     }
   }
 

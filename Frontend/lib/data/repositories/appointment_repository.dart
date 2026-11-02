@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/appointment_model.dart';
@@ -9,6 +10,7 @@ class AppointmentRepository extends ChangeNotifier {
   static const String _storageKey = 'trimmy_local_appointments';
   final List<Appointment> _appointments = [];
   StreamSubscription<QuerySnapshot>? _firestoreSub;
+  StreamSubscription<User?>? _authSub;
 
   List<Appointment> get allAppointments => _appointments;
 
@@ -20,29 +22,35 @@ class AppointmentRepository extends ChangeNotifier {
   @override
   void dispose() {
     _firestoreSub?.cancel();
+    _authSub?.cancel();
     super.dispose();
   }
 
   void _initFirestoreListener() {
     try {
+      _authSub = FirebaseAuth.instance.authStateChanges().listen((user) {
+        if (user != null) {
+          _attachFilteredListener(user.uid);
+        } else {
+          _firestoreSub?.cancel();
+        }
+      });
+    } catch (e) {
+      debugPrint('Firestore authStateChanges listener non disponibile: $e');
+    }
+  }
+
+  void _attachFilteredListener(String uid) {
+    _firestoreSub?.cancel();
+    try {
+      // Ascolta gli appuntamenti collegati a questo utente (sia cliente che salone)
       _firestoreSub = FirebaseFirestore.instance
           .collection('appointments')
+          .where('customerId', isEqualTo: uid)
           .snapshots()
           .listen((snapshot) {
         if (snapshot.docs.isNotEmpty) {
-          for (final doc in snapshot.docs) {
-            final data = doc.data();
-            data['id'] = doc.id;
-            final appt = Appointment.fromJson(data);
-            final index = _appointments.indexWhere((a) => a.id == appt.id);
-            if (index != -1) {
-              _appointments[index] = appt;
-            } else {
-              _appointments.add(appt);
-            }
-          }
-          _saveToDisk();
-          notifyListeners();
+          _mergeSnapshotDocs(snapshot.docs);
         }
       }, onError: (err) {
         debugPrint('Firestore appointments sync (offline/fallback): $err');
@@ -50,6 +58,22 @@ class AppointmentRepository extends ChangeNotifier {
     } catch (e) {
       debugPrint('Firestore non disponibile per appointments: $e');
     }
+  }
+
+  void _mergeSnapshotDocs(List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
+    for (final doc in docs) {
+      final data = doc.data();
+      data['id'] = doc.id;
+      final appt = Appointment.fromJson(data);
+      final index = _appointments.indexWhere((a) => a.id == appt.id);
+      if (index != -1) {
+        _appointments[index] = appt;
+      } else {
+        _appointments.add(appt);
+      }
+    }
+    _saveToDisk();
+    notifyListeners();
   }
 
   Future<void> _loadFromDisk() async {
@@ -178,10 +202,23 @@ class AppointmentRepository extends ChangeNotifier {
     notifyListeners();
 
     try {
+      final apptData = appointment.toJson();
+      apptData['tenantId'] = appointment.salonId;
+      apptData['salonRawId'] = appointment.salonId;
+
       await FirebaseFirestore.instance
           .collection('appointments')
           .doc(appointment.id)
-          .set(appointment.toJson(), SetOptions(merge: true));
+          .set(apptData, SetOptions(merge: true));
+
+      if (appointment.salonId.isNotEmpty) {
+        await FirebaseFirestore.instance
+            .collection('saloni')
+            .doc(appointment.salonId)
+            .collection('appuntamenti')
+            .doc(appointment.id)
+            .set(apptData, SetOptions(merge: true));
+      }
     } catch (e) {
       debugPrint('Firestore async sync bookAppointment: $e');
     }
@@ -219,7 +256,8 @@ class AppointmentRepository extends ChangeNotifier {
   Future<void> cancelAppointment(String appointmentId) async {
     final index = _appointments.indexWhere((a) => a.id == appointmentId);
     if (index != -1) {
-      _appointments[index] = _appointments[index].copyWith(status: AppointmentStatus.cancelled);
+      final appt = _appointments[index];
+      _appointments[index] = appt.copyWith(status: AppointmentStatus.cancelled);
       await _saveToDisk();
       notifyListeners();
 
@@ -231,13 +269,25 @@ class AppointmentRepository extends ChangeNotifier {
       } catch (e) {
         debugPrint('Firestore cancel error: $e');
       }
+
+      if (appt.salonId.isNotEmpty) {
+        try {
+          await FirebaseFirestore.instance
+              .collection('saloni')
+              .doc(appt.salonId)
+              .collection('appuntamenti')
+              .doc(appointmentId)
+              .update({'status': 'CANCELLED'});
+        } catch (_) {}
+      }
     }
   }
 
   Future<void> completeAppointment(String appointmentId) async {
     final index = _appointments.indexWhere((a) => a.id == appointmentId);
     if (index != -1) {
-      _appointments[index] = _appointments[index].copyWith(status: AppointmentStatus.completed);
+      final appt = _appointments[index];
+      _appointments[index] = appt.copyWith(status: AppointmentStatus.completed);
       await _saveToDisk();
       notifyListeners();
 
@@ -248,6 +298,17 @@ class AppointmentRepository extends ChangeNotifier {
             .update({'status': 'COMPLETED'});
       } catch (e) {
         debugPrint('Firestore complete error: $e');
+      }
+
+      if (appt.salonId.isNotEmpty) {
+        try {
+          await FirebaseFirestore.instance
+              .collection('saloni')
+              .doc(appt.salonId)
+              .collection('appuntamenti')
+              .doc(appointmentId)
+              .update({'status': 'COMPLETED'});
+        } catch (_) {}
       }
     }
   }

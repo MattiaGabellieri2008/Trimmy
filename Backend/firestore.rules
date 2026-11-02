@@ -105,10 +105,10 @@ service cloud.firestore {
 
       // ─── SCRITTURA (ANTI-ESCALATION) ───
       // Creazione: Solo il proprietario può creare il proprio profilo.
-      // È consentito impostare solo ruoli validi ('cliente' o 'salone'), impedendo ruoli non autorizzati.
+      // È consentito impostare ruoli validi ('cliente', 'salone', 'client', 'salon'), impedendo ruoli non autorizzati.
       allow create: if isOwner(userId) && (
         !('role' in request.resource.data) ||
-        request.resource.data.role in ['cliente', 'salone']
+        request.resource.data.role in ['cliente', 'salone', 'client', 'salon']
       );
 
       // Aggiornamento: Solo il proprietario del profilo.
@@ -221,8 +221,11 @@ service cloud.firestore {
         allow read, write: if isSalonAuthorized(salonId);
       }
 
-      // 12. PRODOTTI E MAGAZZINO
+      // 12. PRODOTTI E MAGAZZINO (Supporta sia /prodotti sia /inventory)
       match /prodotti/{prodId} {
+        allow read, write: if isSalonAuthorized(salonId);
+      }
+      match /inventory/{prodId} {
         allow read, write: if isSalonAuthorized(salonId);
       }
 
@@ -277,8 +280,10 @@ service cloud.firestore {
       allow read: if isAuthenticated() && (
         resource.data.get('salonRawId', '') == request.auth.uid ||
         resource.data.get('tenantId', '') == request.auth.uid ||
+        resource.data.get('salonId', '') == request.auth.uid ||
         isAppointmentClient(resource.data) ||
-        (resource.data.get('tenantId', '') != '' && isSalonAuthorized(resource.data.tenantId))
+        (resource.data.get('tenantId', '') != '' && isSalonAuthorized(resource.data.tenantId)) ||
+        (resource.data.get('salonId', '') != '' && isSalonAuthorized(resource.data.salonId))
       );
 
       allow create: if isAuthenticated();
@@ -286,8 +291,10 @@ service cloud.firestore {
       allow update, delete: if isAuthenticated() && (
         resource.data.get('salonRawId', '') == request.auth.uid ||
         resource.data.get('tenantId', '') == request.auth.uid ||
+        resource.data.get('salonId', '') == request.auth.uid ||
         isAppointmentClient(resource.data) ||
-        (resource.data.get('tenantId', '') != '' && isSalonAuthorized(resource.data.tenantId))
+        (resource.data.get('tenantId', '') != '' && isSalonAuthorized(resource.data.tenantId)) ||
+        (resource.data.get('salonId', '') != '' && isSalonAuthorized(resource.data.salonId))
       );
     }
 

@@ -26,11 +26,20 @@ class InventoryRepository extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final snap = await FirebaseFirestore.instance
+      // Prova prima la subcollezione ufficiale 'prodotti', con fallback a 'inventory'
+      var snap = await FirebaseFirestore.instance
           .collection('saloni')
           .doc(salonId)
-          .collection('inventory')
+          .collection('prodotti')
           .get();
+
+      if (snap.docs.isEmpty) {
+        snap = await FirebaseFirestore.instance
+            .collection('saloni')
+            .doc(salonId)
+            .collection('inventory')
+            .get();
+      }
 
       if (snap.docs.isNotEmpty) {
         _products = snap.docs.map((doc) {
@@ -63,6 +72,14 @@ class InventoryRepository extends ChangeNotifier {
           await FirebaseFirestore.instance
               .collection('saloni')
               .doc(_currentSalonId)
+              .collection('prodotti')
+              .doc(productId)
+              .update({'stockQuantity': newQuantity});
+        } catch (_) {}
+        try {
+          await FirebaseFirestore.instance
+              .collection('saloni')
+              .doc(_currentSalonId)
               .collection('inventory')
               .doc(productId)
               .update({'stockQuantity': newQuantity});
@@ -78,6 +95,14 @@ class InventoryRepository extends ChangeNotifier {
     notifyListeners();
 
     if (_currentSalonId != null) {
+      try {
+        await FirebaseFirestore.instance
+            .collection('saloni')
+            .doc(_currentSalonId)
+            .collection('prodotti')
+            .doc(product.id)
+            .set(product.toJson());
+      } catch (_) {}
       try {
         await FirebaseFirestore.instance
             .collection('saloni')
