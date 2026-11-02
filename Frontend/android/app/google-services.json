@@ -14,6 +14,14 @@
       },
       "oauth_client": [
         {
+          "client_id": "274369523001-da03270sqgai7uoj4cpgq6gqhdjn0e6g.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.trimmy.app",
+            "certificate_hash": "c8af68cec579a16555e183c10d1227f13209a965"
+          }
+        },
+        {
           "client_id": "274369523001-2piskemepmkbpq8arnuqrafih0s408lq.apps.googleusercontent.com",
           "client_type": 3
         }

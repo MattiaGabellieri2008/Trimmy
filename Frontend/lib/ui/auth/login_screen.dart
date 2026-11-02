@@ -513,10 +513,10 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
           : null,
     );
 
-    if (!success && mounted) {
+    if (!success && mounted && authRepo.errorMessage != null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(authRepo.errorMessage ?? 'Errore durante l\'accesso con Google'),
+          content: Text(authRepo.errorMessage!),
           backgroundColor: AppColors.rose,
         ),
       );

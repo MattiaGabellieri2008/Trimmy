@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/network/api_client.dart';
 import '../models/user_model.dart';
@@ -12,6 +13,11 @@ class AuthRepository extends ChangeNotifier {
   bool _isLoading = false;
   String? _errorMessage;
   static const String _sessionStorageKey = 'trimmy_user_session';
+
+  final GoogleSignIn _googleSignIn = GoogleSignIn(
+    scopes: ['email', 'profile'],
+    serverClientId: '274369523001-2piskemepmkbpq8arnuqrafih0s408lq.apps.googleusercontent.com',
+  );
 
   AppUser? get currentUser => _currentUser;
   bool get isAuthenticated => _currentUser != null;
@@ -233,33 +239,56 @@ class AuthRepository extends ChangeNotifier {
     }
   }
 
-  /// Accesso con Google (Firebase Auth GoogleAuthProvider + Firestore)
+  /// Accesso con Google Reale (GoogleSignIn nativo Android/iOS + Firebase Auth + Firestore)
   Future<bool> signInWithGoogle({UserRole? selectedRole, String? salonName, String? address}) async {
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
 
     try {
-      UserCredential? cred;
+      // 1. Forza la disconnessione della sessione Google precedente per aprire sempre il selettore account
       try {
-        final googleProvider = GoogleAuthProvider();
-        googleProvider.addScope('email');
-        googleProvider.addScope('profile');
-        cred = await FirebaseAuth.instance.signInWithProvider(googleProvider);
-      } catch (fbErr) {
-        debugPrint('GoogleAuthProvider provider intent fallback: $fbErr');
+        await _googleSignIn.signOut();
+      } catch (e) {
+        debugPrint('GoogleSignIn signOut note: $e');
       }
 
-      final fbUser = cred?.user ?? FirebaseAuth.instance.currentUser;
-      final uid = fbUser?.uid ?? 'google-user-${DateTime.now().millisecondsSinceEpoch}';
-      final email = fbUser?.email ?? 'utente.google@gmail.com';
-      final displayName = fbUser?.displayName ?? (selectedRole == UserRole.salon ? 'Titolare Google' : 'Cliente Google');
+      // 2. Apre il selettore nativo degli account Google presenti sul dispositivo
+      final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
 
-      // Cerca se esiste già un profilo Firestore per questo UID
+      if (googleUser == null) {
+        // L'utente ha chiuso il popup / annullato la selezione
+        _isLoading = false;
+        notifyListeners();
+        return false;
+      }
+
+      // 3. Recupera i token crittografici di autenticazione da Google (idToken, accessToken)
+      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
+
+      // 4. Crea la credenziale OAuth compatibile con Firebase
+      final OAuthCredential credential = GoogleAuthProvider.credential(
+        accessToken: googleAuth.accessToken,
+        idToken: googleAuth.idToken,
+      );
+
+      // 5. Autentica su Firebase Auth con la vera credenziale Google
+      final UserCredential userCredential = await FirebaseAuth.instance.signInWithCredential(credential);
+      final User? fbUser = userCredential.user;
+
+      if (fbUser == null) {
+        throw Exception('Impossibile completare l\'autenticazione con Firebase Auth.');
+      }
+
+      final uid = fbUser.uid;
+      final email = fbUser.email ?? googleUser.email;
+      final displayName = fbUser.displayName ?? googleUser.displayName ?? (selectedRole == UserRole.salon ? 'Titolare Google' : 'Cliente Google');
+
+      // 6. Cerca se questo utente Google ha già un profilo su Cloud Firestore
       AppUser? profile = await _fetchFirestoreProfile(uid, email);
 
       if (profile == null) {
-        // Se non esiste ancora, crea il profilo con il ruolo selezionato (o default cliente)
+        // Primo accesso: registra il profilo su Firestore con il ruolo scelto
         final effectiveRole = selectedRole ?? UserRole.client;
         final salonId = effectiveRole == UserRole.salon ? 'salon-${uid.substring(0, 6)}' : null;
 
@@ -267,13 +296,13 @@ class AuthRepository extends ChangeNotifier {
           id: uid,
           email: email,
           displayName: displayName,
-          phone: fbUser?.phoneNumber ?? '+39 333 0000000',
+          phone: fbUser.phoneNumber ?? '+39 333 0000000',
           role: effectiveRole,
           salonId: salonId,
           salonName: effectiveRole == UserRole.salon ? (salonName ?? 'Salone $displayName') : null,
         );
 
-        // Salva su Firestore
+        // Salva su Cloud Firestore in users/{uid}
         try {
           await FirebaseFirestore.instance.collection('users').doc(uid).set({
             'uid': uid,
@@ -284,6 +313,7 @@ class AuthRepository extends ChangeNotifier {
             'salonId': salonId,
             'salonName': profile.salonName,
             'address': address,
+            'photoUrl': fbUser.photoURL ?? googleUser.photoUrl,
             'createdAt': FieldValue.serverTimestamp(),
           }, SetOptions(merge: true));
 
@@ -313,7 +343,8 @@ class AuthRepository extends ChangeNotifier {
       notifyListeners();
       return true;
     } catch (e) {
-      _errorMessage = e.toString();
+      debugPrint('Errore durante Google Sign In nativo: $e');
+      _errorMessage = 'Accesso Google fallito: $e';
       _isLoading = false;
       notifyListeners();
       return false;
