@@ -39,6 +39,14 @@ class AppTheme {
           side: const BorderSide(color: AppColors.zinc200, width: 1),
         ),
       ),
+      bottomSheetTheme: const BottomSheetThemeData(
+        backgroundColor: AppColors.white,
+        surfaceTintColor: Colors.transparent,
+      ),
+      dialogTheme: const DialogThemeData(
+        backgroundColor: AppColors.white,
+        surfaceTintColor: Colors.transparent,
+      ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
           backgroundColor: AppColors.obsidianBlack,
@@ -63,6 +71,10 @@ class AppTheme {
         unselectedLabelStyle: TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
         type: BottomNavigationBarType.fixed,
         elevation: 8,
+      ),
+      dividerTheme: const DividerThemeData(
+        color: AppColors.zinc200,
+        thickness: 1,
       ),
     );
   }
@@ -100,6 +112,43 @@ class AppTheme {
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(20),
           side: const BorderSide(color: AppColors.zinc800, width: 1),
+        ),
+      ),
+      bottomSheetTheme: const BottomSheetThemeData(
+        backgroundColor: AppColors.zinc900,
+        surfaceTintColor: Colors.transparent,
+      ),
+      dialogTheme: const DialogThemeData(
+        backgroundColor: AppColors.zinc900,
+        surfaceTintColor: Colors.transparent,
+      ),
+      bottomNavigationBarTheme: const BottomNavigationBarThemeData(
+        backgroundColor: AppColors.zinc900,
+        selectedItemColor: AppColors.white,
+        unselectedItemColor: AppColors.zinc500,
+        selectedLabelStyle: TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+        unselectedLabelStyle: TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
+        type: BottomNavigationBarType.fixed,
+        elevation: 8,
+      ),
+      dividerTheme: const DividerThemeData(
+        color: AppColors.zinc800,
+        thickness: 1,
+      ),
+      elevatedButtonTheme: ElevatedButtonThemeData(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: AppColors.white,
+          foregroundColor: AppColors.obsidianBlack,
+          elevation: 0,
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+          textStyle: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.bold,
+            letterSpacing: -0.2,
+          ),
         ),
       ),
     );

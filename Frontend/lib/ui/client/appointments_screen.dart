@@ -13,23 +13,29 @@ class AppointmentsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final user = context.watch<AuthRepository>().currentUser;
     final apptRepo = context.watch<AppointmentRepository>();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final clientAppts = apptRepo.getClientAppointments(user?.id ?? 'demo-client-1');
 
     final upcoming = clientAppts.where((a) => a.status == AppointmentStatus.confirmed && a.startTime.isAfter(DateTime.now().subtract(const Duration(hours: 1)))).toList();
     final past = clientAppts.where((a) => a.status != AppointmentStatus.confirmed || a.startTime.isBefore(DateTime.now().subtract(const Duration(hours: 1)))).toList();
 
     return Scaffold(
-      backgroundColor: AppColors.zinc50,
+      backgroundColor: isDark ? const Color(0xFF121212) : AppColors.zinc50,
       appBar: AppBar(
         title: const Text('I Miei Appuntamenti', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+        elevation: 0,
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
           // Header Prossima Seduta
-          const Text(
+          Text(
             'In Programma',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.zinc900),
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: isDark ? Colors.white : AppColors.zinc900,
+            ),
           ),
           const SizedBox(height: 12),
 
@@ -37,42 +43,46 @@ class AppointmentsScreen extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
-                color: AppColors.white,
+                color: isDark ? const Color(0xFF1E1E1E) : AppColors.white,
                 borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: AppColors.zinc200),
+                border: Border.all(color: isDark ? const Color(0xFF2A2A2A) : AppColors.zinc200),
               ),
-              child: const Center(
+              child: Center(
                 child: Text(
                   'Nessun appuntamento in programma.\nEsplora i saloni per prenotare un trattamento!',
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: AppColors.zinc500, fontSize: 13),
+                  style: TextStyle(color: isDark ? Colors.white60 : AppColors.zinc500, fontSize: 13),
                 ),
               ),
             )
           else
-            ...upcoming.map((appt) => _UpcomingPassCard(appointment: appt)),
+            ...upcoming.map((appt) => _UpcomingPassCard(appointment: appt, isDark: isDark)),
 
           const SizedBox(height: 28),
 
           // Storico Visite
-          const Text(
+          Text(
             'Storico Visite Passate',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.zinc900),
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: isDark ? Colors.white : AppColors.zinc900,
+            ),
           ),
           const SizedBox(height: 12),
 
           if (past.isEmpty)
-            const Center(
+            Center(
               child: Padding(
-                padding: EdgeInsets.all(16),
+                padding: const EdgeInsets.all(16),
                 child: Text(
                   'Nessuna visita nello storico.',
-                  style: TextStyle(color: AppColors.zinc400, fontSize: 12),
+                  style: TextStyle(color: isDark ? Colors.white38 : AppColors.zinc400, fontSize: 12),
                 ),
               ),
             )
           else
-            ...past.map((appt) => _PastAppointmentCard(appointment: appt)),
+            ...past.map((appt) => _PastAppointmentCard(appointment: appt, isDark: isDark)),
         ],
       ),
     );
@@ -81,20 +91,21 @@ class AppointmentsScreen extends StatelessWidget {
 
 class _UpcomingPassCard extends StatelessWidget {
   final Appointment appointment;
+  final bool isDark;
 
-  const _UpcomingPassCard({required this.appointment});
+  const _UpcomingPassCard({required this.appointment, required this.isDark});
 
   @override
   Widget build(BuildContext context) {
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
-        color: AppColors.white,
+        color: isDark ? const Color(0xFF1E1E1E) : AppColors.white,
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: AppColors.zinc200),
+        border: Border.all(color: isDark ? const Color(0xFF2A2A2A) : AppColors.zinc200),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
+            color: Colors.black.withOpacity(isDark ? 0.3 : 0.04),
             blurRadius: 12,
             offset: const Offset(0, 4),
           ),
@@ -105,9 +116,9 @@ class _UpcomingPassCard extends StatelessWidget {
           // Header Scuro Boarding Pass
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-            decoration: const BoxDecoration(
-              color: AppColors.obsidianBlack,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF2A2A2A) : AppColors.obsidianBlack,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -154,12 +165,16 @@ class _UpcomingPassCard extends StatelessWidget {
               children: [
                 Text(
                   appointment.serviceName,
-                  style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: AppColors.zinc900),
+                  style: TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.bold,
+                    color: isDark ? Colors.white : AppColors.zinc900,
+                  ),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   appointment.salonName,
-                  style: const TextStyle(fontSize: 13, color: AppColors.zinc500),
+                  style: TextStyle(fontSize: 13, color: isDark ? Colors.white60 : AppColors.zinc500),
                 ),
                 const SizedBox(height: 16),
                 Row(
@@ -172,7 +187,11 @@ class _UpcomingPassCard extends StatelessWidget {
                           const SizedBox(height: 2),
                           Text(
                             DateFormat('EEE d MMM, HH:mm', 'it_IT').format(appointment.startTime),
-                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.zinc800),
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                              color: isDark ? Colors.white : AppColors.zinc800,
+                            ),
                           ),
                         ],
                       ),
@@ -185,7 +204,11 @@ class _UpcomingPassCard extends StatelessWidget {
                           const SizedBox(height: 2),
                           Text(
                             appointment.staffName,
-                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.zinc800),
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                              color: isDark ? Colors.white : AppColors.zinc800,
+                            ),
                           ),
                         ],
                       ),
@@ -202,7 +225,7 @@ class _UpcomingPassCard extends StatelessWidget {
                         },
                         style: OutlinedButton.styleFrom(
                           foregroundColor: AppColors.rose,
-                          side: const BorderSide(color: AppColors.zinc200),
+                          side: BorderSide(color: isDark ? Colors.red.shade900 : AppColors.zinc200),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                         ),
                         child: const Text('Disdici', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
@@ -221,8 +244,9 @@ class _UpcomingPassCard extends StatelessWidget {
 
 class _PastAppointmentCard extends StatelessWidget {
   final Appointment appointment;
+  final bool isDark;
 
-  const _PastAppointmentCard({required this.appointment});
+  const _PastAppointmentCard({required this.appointment, required this.isDark});
 
   @override
   Widget build(BuildContext context) {
@@ -230,9 +254,9 @@ class _PastAppointmentCard extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppColors.white,
+        color: isDark ? const Color(0xFF1E1E1E) : AppColors.white,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.zinc200),
+        border: Border.all(color: isDark ? const Color(0xFF2A2A2A) : AppColors.zinc200),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -243,12 +267,16 @@ class _PastAppointmentCard extends StatelessWidget {
               children: [
                 Text(
                   appointment.serviceName,
-                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.zinc800),
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: isDark ? Colors.white : AppColors.zinc800,
+                  ),
                 ),
                 const SizedBox(height: 2),
                 Text(
                   '${appointment.salonName} • ${DateFormat('d MMM yyyy', 'it_IT').format(appointment.startTime)}',
-                  style: const TextStyle(fontSize: 11, color: AppColors.zinc400),
+                  style: TextStyle(fontSize: 11, color: isDark ? Colors.white54 : AppColors.zinc400),
                 ),
               ],
             ),
@@ -256,12 +284,16 @@ class _PastAppointmentCard extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
-              color: AppColors.zinc100,
+              color: isDark ? const Color(0xFF2A2A2A) : AppColors.zinc100,
               borderRadius: BorderRadius.circular(8),
             ),
             child: Text(
               appointment.status.name.toUpperCase(),
-              style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: AppColors.zinc600),
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.bold,
+                color: isDark ? AppColors.gold : AppColors.zinc600,
+              ),
             ),
           ),
         ],

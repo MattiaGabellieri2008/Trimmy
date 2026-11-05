@@ -28,6 +28,7 @@ class AppUser {
   bool get isSalonOwner => role == UserRole.salon;
   bool get isClient => role == UserRole.client;
   bool get isStaff => role == UserRole.staff;
+  String get uid => id;
 
   factory AppUser.fromJson(Map<String, dynamic> json) {
     return AppUser(

@@ -58,3 +58,16 @@ mutation UpsertTenant($id: UUID!, $name: String!, $planType: String!, $businessC
 mutation UpdateTenantOnboarding($id: UUID!, $businessCategory: String!) @auth(level: PUBLIC, insecureReason: "Prototyping") {
   tenant_update(id: $id, data: { businessCategory: $businessCategory, onboardingCompleted: true })
 }
+
+
+mutation DeleteTenant($id: UUID!) @auth(level: PUBLIC, insecureReason: "Prototyping") {
+  tenant_delete(id: $id)
+}
+
+mutation DeleteUser($id: String!) @auth(level: PUBLIC, insecureReason: "Prototyping") {
+  user_delete(id: $id)
+}
+
+mutation DeleteService($id: UUID!) @auth(level: PUBLIC, insecureReason: "Prototyping") {
+  service_delete(id: $id)
+}

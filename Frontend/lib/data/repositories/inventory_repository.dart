@@ -11,9 +11,7 @@ class InventoryRepository extends ChangeNotifier {
   bool get isLoading => _isLoading;
   int get lowStockCount => _products.where((p) => p.isLowStock).length;
 
-  InventoryRepository() {
-    _loadSeedProducts();
-  }
+  InventoryRepository();
 
   void setSalon(String salonId) {
     if (_currentSalonId == salonId) return;
@@ -26,7 +24,7 @@ class InventoryRepository extends ChangeNotifier {
     notifyListeners();
 
     try {
-      // Prova prima la subcollezione ufficiale 'prodotti', con fallback a 'inventory'
+      // Prova la subcollezione ufficiale 'prodotti', con fallback a 'inventory'
       var snap = await FirebaseFirestore.instance
           .collection('saloni')
           .doc(salonId)
@@ -48,13 +46,11 @@ class InventoryRepository extends ChangeNotifier {
           return ProductModel.fromJson(data);
         }).toList();
       } else {
-        _loadSeedProducts();
+        _products = [];
       }
     } catch (e) {
-      debugPrint('Firestore inventory fetch fallback: $e');
-      if (_products.isEmpty) {
-        _loadSeedProducts();
-      }
+      debugPrint('Firestore inventory fetch: $e');
+      _products = [];
     }
 
     _isLoading = false;
@@ -116,64 +112,29 @@ class InventoryRepository extends ChangeNotifier {
     }
   }
 
-  void _loadSeedProducts() {
-    _products = [
-      ProductModel(
-        id: 'prod-shampoo-bio',
-        tenantId: 'salon-1',
-        name: 'Shampoo Ristrutturante Bio 250ml',
-        brand: 'Kérastase',
-        category: 'RIVENDITA',
-        costPrice: 8.50,
-        retailPrice: 24.00,
-        stockQuantity: 12,
-        minStockThreshold: 4,
-      ),
-      ProductModel(
-        id: 'prod-maschera-cheratina',
-        tenantId: 'salon-1',
-        name: 'Maschera Nutritiva Cheratina 500ml',
-        brand: 'L\'Oréal Professionnel',
-        category: 'RIVENDITA',
-        costPrice: 12.00,
-        retailPrice: 32.00,
-        stockQuantity: 2, // Sottoscorta!
-        minStockThreshold: 3,
-      ),
-      ProductModel(
-        id: 'prod-ossigeno-20v',
-        tenantId: 'salon-1',
-        name: 'Ossidante in Crema 20 Volumi 1000ml',
-        brand: 'Wella Professionals',
-        category: 'USO_INTERNO',
-        costPrice: 6.80,
-        retailPrice: 0.0,
-        stockQuantity: 8,
-        minStockThreshold: 2,
-      ),
-      ProductModel(
-        id: 'prod-olio-barba',
-        tenantId: 'salon-1',
-        name: 'Olio Idratante Barba al Sandalo 50ml',
-        brand: 'Proraso Professional',
-        category: 'RIVENDITA',
-        costPrice: 5.50,
-        retailPrice: 18.00,
-        stockQuantity: 1, // Sottoscorta!
-        minStockThreshold: 3,
-      ),
-      ProductModel(
-        id: 'prod-decolorante-polvere',
-        tenantId: 'salon-1',
-        name: 'Polvere Decolorante Blu 500g',
-        brand: 'Schwarzkopf Blondme',
-        category: 'USO_INTERNO',
-        costPrice: 14.50,
-        retailPrice: 0.0,
-        stockQuantity: 5,
-        minStockThreshold: 2,
-      ),
-    ];
+  Future<void> deleteProduct(String productId) async {
+    _products.removeWhere((p) => p.id == productId);
+    notifyListeners();
+
+    if (_currentSalonId != null) {
+      try {
+        await FirebaseFirestore.instance
+            .collection('saloni')
+            .doc(_currentSalonId)
+            .collection('prodotti')
+            .doc(productId)
+            .delete();
+      } catch (_) {}
+      try {
+        await FirebaseFirestore.instance
+            .collection('saloni')
+            .doc(_currentSalonId)
+            .collection('inventory')
+            .doc(productId)
+            .delete();
+      } catch (e) {
+        debugPrint('Firestore deleteProduct error: $e');
+      }
+    }
   }
 }
-

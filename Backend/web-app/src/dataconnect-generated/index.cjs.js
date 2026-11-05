@@ -165,6 +165,20 @@ exports.updateCustomer = function updateCustomer(dcOrVars, vars) {
 }
 ;
 
+const deleteCustomerRef = (dcOrVars, vars) => {
+  const { dc: dcInstance, vars: inputVars} = validateArgs(connectorConfig, dcOrVars, vars, true);
+  dcInstance._useGeneratedSdk();
+  return mutationRef(dcInstance, 'DeleteCustomer', inputVars);
+}
+deleteCustomerRef.operationName = 'DeleteCustomer';
+exports.deleteCustomerRef = deleteCustomerRef;
+
+exports.deleteCustomer = function deleteCustomer(dcOrVars, vars) {
+  const { dc: dcInstance, vars: inputVars } = validateArgs(connectorConfig, dcOrVars, vars, true);
+  return executeMutation(deleteCustomerRef(dcInstance, inputVars));
+}
+;
+
 const inserisciDatiDiProvaRef = (dc) => {
   const { dc: dcInstance} = validateArgs(connectorConfig, dc, undefined);
   dcInstance._useGeneratedSdk();
@@ -204,6 +218,48 @@ exports.updateTenantOnboardingRef = updateTenantOnboardingRef;
 exports.updateTenantOnboarding = function updateTenantOnboarding(dcOrVars, vars) {
   const { dc: dcInstance, vars: inputVars } = validateArgs(connectorConfig, dcOrVars, vars, true);
   return executeMutation(updateTenantOnboardingRef(dcInstance, inputVars));
+}
+;
+
+const deleteTenantRef = (dcOrVars, vars) => {
+  const { dc: dcInstance, vars: inputVars} = validateArgs(connectorConfig, dcOrVars, vars, true);
+  dcInstance._useGeneratedSdk();
+  return mutationRef(dcInstance, 'DeleteTenant', inputVars);
+}
+deleteTenantRef.operationName = 'DeleteTenant';
+exports.deleteTenantRef = deleteTenantRef;
+
+exports.deleteTenant = function deleteTenant(dcOrVars, vars) {
+  const { dc: dcInstance, vars: inputVars } = validateArgs(connectorConfig, dcOrVars, vars, true);
+  return executeMutation(deleteTenantRef(dcInstance, inputVars));
+}
+;
+
+const deleteUserRef = (dcOrVars, vars) => {
+  const { dc: dcInstance, vars: inputVars} = validateArgs(connectorConfig, dcOrVars, vars, true);
+  dcInstance._useGeneratedSdk();
+  return mutationRef(dcInstance, 'DeleteUser', inputVars);
+}
+deleteUserRef.operationName = 'DeleteUser';
+exports.deleteUserRef = deleteUserRef;
+
+exports.deleteUser = function deleteUser(dcOrVars, vars) {
+  const { dc: dcInstance, vars: inputVars } = validateArgs(connectorConfig, dcOrVars, vars, true);
+  return executeMutation(deleteUserRef(dcInstance, inputVars));
+}
+;
+
+const deleteServiceRef = (dcOrVars, vars) => {
+  const { dc: dcInstance, vars: inputVars} = validateArgs(connectorConfig, dcOrVars, vars, true);
+  dcInstance._useGeneratedSdk();
+  return mutationRef(dcInstance, 'DeleteService', inputVars);
+}
+deleteServiceRef.operationName = 'DeleteService';
+exports.deleteServiceRef = deleteServiceRef;
+
+exports.deleteService = function deleteService(dcOrVars, vars) {
+  const { dc: dcInstance, vars: inputVars } = validateArgs(connectorConfig, dcOrVars, vars, true);
+  return executeMutation(deleteServiceRef(dcInstance, inputVars));
 }
 ;
 

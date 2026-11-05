@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../data/models/product_model.dart';
+import '../../data/repositories/auth_repository.dart';
 import '../../data/repositories/inventory_repository.dart';
 
 class InventoryScreen extends StatefulWidget {
@@ -17,6 +18,26 @@ class _InventoryScreenState extends State<InventoryScreen> {
 
   final List<String> _categories = ['Tutti', 'RIVENDITA', 'USO_INTERNO', 'Sotto Scorta'];
 
+  final List<String> _keywordChips = [
+    'Tutti',
+    'Rivendita',
+    'Uso Salone',
+    'Sotto Scorta',
+    'Shampoo',
+    'Maschera',
+    'Colore',
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final authRepo = context.read<AuthRepository>();
+      final salonId = authRepo.currentUser?.salonId ?? authRepo.currentUser?.uid ?? 'salone-default';
+      context.read<InventoryRepository>().setSalon(salonId);
+    });
+  }
+
   @override
   void dispose() {
     _searchController.dispose();
@@ -26,6 +47,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
   @override
   Widget build(BuildContext context) {
     final invRepo = context.watch<InventoryRepository>();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final query = _searchController.text.toLowerCase().trim();
 
     final filteredProducts = invRepo.products.where((p) {
@@ -46,10 +68,9 @@ class _InventoryScreenState extends State<InventoryScreen> {
     }).toList();
 
     return Scaffold(
-      backgroundColor: AppColors.zinc50,
+      backgroundColor: isDark ? const Color(0xFF121212) : AppColors.zinc50,
       appBar: AppBar(
         title: const Text('Magazzino & Prodotti', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
-        backgroundColor: AppColors.white,
         elevation: 0,
         actions: [
           if (invRepo.lowStockCount > 0)
@@ -59,18 +80,18 @@ class _InventoryScreenState extends State<InventoryScreen> {
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
-                    color: Colors.red.shade50,
+                    color: Colors.red.shade900.withOpacity(0.2),
                     borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: Colors.red.shade200),
+                    border: Border.all(color: Colors.red.shade400),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.warning_amber_rounded, size: 14, color: Colors.red.shade700),
+                      const Icon(Icons.warning_amber_rounded, size: 14, color: Colors.red),
                       const SizedBox(width: 4),
                       Text(
                         '${invRepo.lowStockCount} Sotto Scorta',
-                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.red.shade700),
+                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.red),
                       ),
                     ],
                   ),
@@ -83,53 +104,88 @@ class _InventoryScreenState extends State<InventoryScreen> {
         children: [
           // Barra Ricerca e Filtri Categoria
           Container(
-            color: AppColors.white,
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+            color: isDark ? const Color(0xFF1E1E1E) : AppColors.white,
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
             child: Column(
               children: [
+                // Input di ricerca
                 Container(
                   height: 42,
                   decoration: BoxDecoration(
-                    color: AppColors.zinc100,
+                    color: isDark ? const Color(0xFF2A2A2A) : AppColors.zinc100,
                     borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: isDark ? const Color(0xFF3A3A3A) : AppColors.zinc200),
                   ),
                   child: TextField(
                     controller: _searchController,
                     onChanged: (_) => setState(() {}),
-                    decoration: const InputDecoration(
-                      prefixIcon: Icon(Icons.search, size: 18, color: AppColors.zinc400),
-                      hintText: 'Cerca prodotto per nome o brand...',
-                      hintStyle: TextStyle(fontSize: 13, color: AppColors.zinc400),
+                    style: TextStyle(fontSize: 13, color: isDark ? Colors.white : AppColors.zinc900),
+                    decoration: InputDecoration(
+                      prefixIcon: const Icon(Icons.search, size: 18, color: AppColors.zinc400),
+                      hintText: 'Cerca prodotto per nome o marca...',
+                      hintStyle: const TextStyle(fontSize: 13, color: AppColors.zinc400),
                       border: InputBorder.none,
-                      contentPadding: EdgeInsets.symmetric(vertical: 10),
+                      contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                      suffixIcon: _searchController.text.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(Icons.close, size: 16, color: AppColors.zinc400),
+                              onPressed: () {
+                                _searchController.clear();
+                                setState(() {});
+                              },
+                            )
+                          : null,
                     ),
                   ),
                 ),
-                const SizedBox(height: 10),
+
+                const SizedBox(height: 8),
+
+                // Chip Suggerimenti Parole Chiave
                 SizedBox(
-                  height: 32,
+                  height: 28,
                   child: ListView.separated(
                     scrollDirection: Axis.horizontal,
-                    itemCount: _categories.length,
-                    separatorBuilder: (_, __) => const SizedBox(width: 8),
+                    itemCount: _keywordChips.length,
+                    separatorBuilder: (_, __) => const SizedBox(width: 6),
                     itemBuilder: (context, idx) {
-                      final cat = _categories[idx];
-                      final isSelected = _selectedCategory == cat;
-                      return ChoiceChip(
+                      final kw = _keywordChips[idx];
+                      final isActive = _searchController.text.toLowerCase() == kw.toLowerCase() ||
+                          (kw == 'Tutti' && _searchController.text.isEmpty && _selectedCategory == 'Tutti');
+
+                      return ActionChip(
                         label: Text(
-                          cat == 'USO_INTERNO' ? 'Uso Interno' : (cat == 'RIVENDITA' ? 'Rivendita' : cat),
+                          kw == 'Tutti' ? 'Tutti i Prodotti' : '#$kw',
                           style: TextStyle(
                             fontSize: 11,
-                            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                            color: isSelected ? AppColors.white : AppColors.zinc700,
+                            fontWeight: isActive ? FontWeight.bold : FontWeight.w500,
+                            color: isActive ? AppColors.gold : (isDark ? Colors.white70 : AppColors.zinc700),
                           ),
                         ),
-                        selected: isSelected,
-                        selectedColor: AppColors.obsidianBlack,
-                        backgroundColor: AppColors.zinc100,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        backgroundColor: isActive
+                            ? (isDark ? const Color(0xFF332915) : const Color(0xFFFEF3C7))
+                            : (isDark ? const Color(0xFF2A2A2A) : AppColors.zinc100),
+                        side: BorderSide(
+                          color: isActive ? AppColors.gold : (isDark ? const Color(0xFF3A3A3A) : AppColors.zinc200),
+                        ),
                         padding: const EdgeInsets.symmetric(horizontal: 4),
-                        onSelected: (_) => setState(() => _selectedCategory = cat),
+                        visualDensity: VisualDensity.compact,
+                        onPressed: () {
+                          if (kw == 'Tutti') {
+                            _searchController.clear();
+                            setState(() => _selectedCategory = 'Tutti');
+                          } else if (kw == 'Rivendita') {
+                            setState(() => _selectedCategory = 'RIVENDITA');
+                          } else if (kw == 'Uso Salone') {
+                            setState(() => _selectedCategory = 'USO_INTERNO');
+                          } else if (kw == 'Sotto Scorta') {
+                            setState(() => _selectedCategory = 'Sotto Scorta');
+                          } else {
+                            setState(() {
+                              _searchController.text = kw;
+                            });
+                          }
+                        },
                       );
                     },
                   ),
@@ -138,15 +194,42 @@ class _InventoryScreenState extends State<InventoryScreen> {
             ),
           ),
 
-          const Divider(height: 1, color: AppColors.zinc200),
+          Divider(height: 1, color: isDark ? const Color(0xFF2A2A2A) : AppColors.zinc200),
 
-          // Lista Prodotti
+          // Lista Prodotti Reali
           Expanded(
             child: filteredProducts.isEmpty
-                ? const Center(
-                    child: Text(
-                      'Nessun prodotto trovato nel magazzino.',
-                      style: TextStyle(color: AppColors.zinc400, fontSize: 13),
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.inventory_2_outlined, size: 52, color: isDark ? Colors.white30 : AppColors.zinc300),
+                          const SizedBox(height: 12),
+                          Text(
+                            _searchController.text.isNotEmpty
+                                ? 'Nessun prodotto corrisponde a "${_searchController.text}".'
+                                : 'Magazzino vuoto. Non ci sono ancora prodotti registrati nel Cloud.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: isDark ? Colors.white70 : AppColors.zinc600,
+                              fontSize: 14,
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          ElevatedButton.icon(
+                            onPressed: () => _showAddProductDialog(context, invRepo),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: isDark ? AppColors.gold : AppColors.obsidianBlack,
+                              foregroundColor: isDark ? AppColors.obsidianBlack : AppColors.white,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                            icon: const Icon(Icons.add, size: 18),
+                            label: const Text('Aggiungi Primo Prodotto'),
+                          ),
+                        ],
+                      ),
                     ),
                   )
                 : ListView.separated(
@@ -155,7 +238,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                     separatorBuilder: (_, __) => const SizedBox(height: 12),
                     itemBuilder: (context, idx) {
                       final product = filteredProducts[idx];
-                      return _buildProductCard(context, product, invRepo);
+                      return _buildProductCard(context, product, invRepo, isDark);
                     },
                   ),
           ),
@@ -163,27 +246,29 @@ class _InventoryScreenState extends State<InventoryScreen> {
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _showAddProductDialog(context, invRepo),
-        backgroundColor: AppColors.obsidianBlack,
-        foregroundColor: AppColors.white,
+        backgroundColor: isDark ? AppColors.gold : AppColors.obsidianBlack,
+        foregroundColor: isDark ? AppColors.obsidianBlack : AppColors.white,
         icon: const Icon(Icons.add, size: 20),
         label: const Text('Nuovo Prodotto', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
       ),
     );
   }
 
-  Widget _buildProductCard(BuildContext context, ProductModel product, InventoryRepository invRepo) {
+  Widget _buildProductCard(BuildContext context, ProductModel product, InventoryRepository invRepo, bool isDark) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppColors.white,
+        color: isDark ? const Color(0xFF1E1E1E) : AppColors.white,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: product.isLowStock ? Colors.red.shade200 : AppColors.zinc200,
+          color: product.isLowStock
+              ? Colors.red.shade400
+              : (isDark ? const Color(0xFF2A2A2A) : AppColors.zinc200),
           width: product.isLowStock ? 1.5 : 1,
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.02),
+            color: Colors.black.withOpacity(isDark ? 0.3 : 0.02),
             blurRadius: 6,
             offset: const Offset(0, 2),
           ),
@@ -197,12 +282,14 @@ class _InventoryScreenState extends State<InventoryScreen> {
             width: 44,
             height: 44,
             decoration: BoxDecoration(
-              color: product.isRetail ? Colors.amber.shade50 : Colors.blue.shade50,
+              color: product.isRetail
+                  ? (isDark ? const Color(0xFF332915) : Colors.amber.shade50)
+                  : (isDark ? const Color(0xFF14293D) : Colors.blue.shade50),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Icon(
               product.isRetail ? Icons.shopping_bag_outlined : Icons.science_outlined,
-              color: product.isRetail ? Colors.amber.shade800 : Colors.blue.shade800,
+              color: product.isRetail ? AppColors.gold : Colors.blue.shade400,
               size: 22,
             ),
           ),
@@ -213,22 +300,20 @@ class _InventoryScreenState extends State<InventoryScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        product.name,
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.zinc900),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ],
+                Text(
+                  product.name,
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                    color: isDark ? Colors.white : AppColors.zinc900,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 3),
                 Text(
                   '${product.brand} • ${product.category == "RIVENDITA" ? "Rivendita" : "Uso Salone"}',
-                  style: const TextStyle(fontSize: 11, color: AppColors.zinc500),
+                  style: TextStyle(fontSize: 11, color: isDark ? Colors.white60 : AppColors.zinc500),
                 ),
                 const SizedBox(height: 6),
                 Row(
@@ -236,13 +321,17 @@ class _InventoryScreenState extends State<InventoryScreen> {
                     if (product.isRetail) ...[
                       Text(
                         '€${product.retailPrice.toStringAsFixed(2)}',
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: AppColors.zinc900),
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                          color: isDark ? AppColors.gold : AppColors.zinc900,
+                        ),
                       ),
                       const SizedBox(width: 8),
                     ],
                     Text(
                       'Costo: €${product.costPrice.toStringAsFixed(2)}',
-                      style: const TextStyle(fontSize: 11, color: AppColors.zinc400),
+                      style: TextStyle(fontSize: 11, color: isDark ? Colors.white54 : AppColors.zinc400),
                     ),
                   ],
                 ),
@@ -254,15 +343,15 @@ class _InventoryScreenState extends State<InventoryScreen> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
             decoration: BoxDecoration(
-              color: AppColors.zinc50,
+              color: isDark ? const Color(0xFF2A2A2A) : AppColors.zinc50,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AppColors.zinc200),
+              border: Border.all(color: isDark ? const Color(0xFF3A3A3A) : AppColors.zinc200),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 IconButton(
-                  icon: const Icon(Icons.remove, size: 16, color: AppColors.zinc700),
+                  icon: Icon(Icons.remove, size: 16, color: isDark ? Colors.white70 : AppColors.zinc700),
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
                   onPressed: product.stockQuantity > 0
@@ -277,12 +366,14 @@ class _InventoryScreenState extends State<InventoryScreen> {
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.bold,
-                      color: product.isLowStock ? Colors.red.shade700 : AppColors.zinc900,
+                      color: product.isLowStock
+                          ? Colors.red
+                          : (isDark ? Colors.white : AppColors.zinc900),
                     ),
                   ),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.add, size: 16, color: AppColors.zinc700),
+                  icon: Icon(Icons.add, size: 16, color: isDark ? Colors.white70 : AppColors.zinc700),
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
                   onPressed: () => invRepo.updateStock(product.id, product.stockQuantity + 1),
@@ -303,10 +394,12 @@ class _InventoryScreenState extends State<InventoryScreen> {
     final stockCtrl = TextEditingController(text: '10');
     String category = 'RIVENDITA';
 
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: AppColors.white,
+      backgroundColor: isDark ? const Color(0xFF1E1E1E) : AppColors.white,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (ctx) {
         return StatefulBuilder(
@@ -323,7 +416,14 @@ class _InventoryScreenState extends State<InventoryScreen> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('Nuovo Prodotto a Magazzino', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                    Text(
+                      'Nuovo Prodotto a Magazzino',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                        color: isDark ? Colors.white : AppColors.zinc900,
+                      ),
+                    ),
                     const SizedBox(height: 14),
                     TextField(
                       controller: nameCtrl,
@@ -340,6 +440,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                         Expanded(
                           child: DropdownButtonFormField<String>(
                             value: category,
+                            dropdownColor: isDark ? const Color(0xFF2A2A2A) : AppColors.white,
                             decoration: const InputDecoration(labelText: 'Destinazione'),
                             items: const [
                               DropdownMenuItem(value: 'RIVENDITA', child: Text('Rivendita')),
@@ -386,9 +487,12 @@ class _InventoryScreenState extends State<InventoryScreen> {
                       child: ElevatedButton(
                         onPressed: () {
                           if (nameCtrl.text.trim().isEmpty) return;
+                          final authRepo = Provider.of<AuthRepository>(context, listen: false);
+                          final salonId = authRepo.currentUser?.salonId ?? authRepo.currentUser?.id ?? 'salone-default';
+
                           final newProd = ProductModel(
                             id: 'prod-${DateTime.now().millisecondsSinceEpoch}',
-                            tenantId: 'salon-1',
+                            tenantId: salonId,
                             name: nameCtrl.text.trim(),
                             brand: brandCtrl.text.trim().isNotEmpty ? brandCtrl.text.trim() : 'Generico',
                             category: category,
@@ -401,8 +505,8 @@ class _InventoryScreenState extends State<InventoryScreen> {
                           Navigator.pop(ctx);
                         },
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.obsidianBlack,
-                          foregroundColor: AppColors.white,
+                          backgroundColor: isDark ? AppColors.gold : AppColors.obsidianBlack,
+                          foregroundColor: isDark ? AppColors.obsidianBlack : AppColors.white,
                           padding: const EdgeInsets.symmetric(vertical: 14),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                         ),
@@ -419,4 +523,3 @@ class _InventoryScreenState extends State<InventoryScreen> {
     );
   }
 }
-

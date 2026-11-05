@@ -22,30 +22,41 @@ class _BookingWizardScreenState extends State<BookingWizardScreen> {
   int _currentStep = 0; // 0: Servizio, 1: Stylist, 2: Data/Ora, 3: Riepilogo
   
   SalonService? _selectedService;
-  String _selectedStaff = 'Marco (Master Stylist)';
+  late String _selectedStaff;
   DateTime _selectedDate = DateTime.now();
   String _selectedSlot = '10:30';
   bool _isBooking = false;
 
-  final List<String> _staffList = [
-    'Qualsiasi Operatore Disponibile',
-    'Marco (Master Stylist)',
-    'Elena (Colorist & Treatment)',
-    'Luca (Barber Specialist)',
-  ];
+  late final List<String> _staffList;
 
   final List<String> _timeSlots = [
     '09:00', '09:45', '10:30', '11:15', '14:30', '15:15', '16:00', '17:30', '18:15'
   ];
 
   @override
+  void initState() {
+    super.initState();
+    _staffList = [
+      'Qualsiasi Operatore Disponibile',
+      'Titolare - ${widget.salon.name}',
+      'Staff Specializzato Trimmy',
+    ];
+    _selectedStaff = _staffList.first;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<SalonRepository>().syncSalonServices(widget.salon.id);
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     final services = context.watch<SalonRepository>().services;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor: AppColors.zinc50,
+      backgroundColor: isDark ? const Color(0xFF121212) : AppColors.zinc50,
       appBar: AppBar(
-        title: Text(widget.salon.name, style: const TextStyle(fontSize: 16)),
+        title: Text(widget.salon.name, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(40),
           child: Padding(
@@ -58,7 +69,9 @@ class _BookingWizardScreenState extends State<BookingWizardScreen> {
                     height: 4,
                     margin: const EdgeInsets.symmetric(horizontal: 2),
                     decoration: BoxDecoration(
-                      color: isActive ? AppColors.obsidianBlack : AppColors.zinc200,
+                      color: isActive
+                          ? (isDark ? AppColors.gold : AppColors.obsidianBlack)
+                          : (isDark ? const Color(0xFF2A2A2A) : AppColors.zinc200),
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
@@ -68,98 +81,153 @@ class _BookingWizardScreenState extends State<BookingWizardScreen> {
           ),
         ),
       ),
-      body: _buildCurrentStep(services),
-      bottomNavigationBar: _buildBottomBar(),
+      body: _buildCurrentStep(services, isDark),
+      bottomNavigationBar: _buildBottomBar(isDark),
     );
   }
 
-  Widget _buildCurrentStep(List<SalonService> services) {
+  Widget _buildCurrentStep(List<SalonService> services, bool isDark) {
     switch (_currentStep) {
       case 0:
-        return _buildServiceSelection(services);
+        return _buildServiceSelection(services, isDark);
       case 1:
-        return _buildStaffSelection();
+        return _buildStaffSelection(isDark);
       case 2:
-        return _buildDateTimeSelection();
+        return _buildDateTimeSelection(isDark);
       case 3:
       default:
-        return _buildConfirmationSummary();
+        return _buildConfirmationSummary(isDark);
     }
   }
 
-  // STEP 1: Scelta Trattamento
-  Widget _buildServiceSelection(List<SalonService> services) {
+  // STEP 1: Scelta Trattamento Reale
+  Widget _buildServiceSelection(List<SalonService> services, bool isDark) {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        const Text(
+        Text(
           '1. Seleziona il Trattamento',
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.zinc900),
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: isDark ? Colors.white : AppColors.zinc900,
+          ),
         ),
         const SizedBox(height: 4),
-        const Text(
-          'Scegli il servizio desiderato con tariffa e durata garantita.',
-          style: TextStyle(fontSize: 12, color: AppColors.zinc500),
+        Text(
+          'Scegli il servizio desiderato con tariffa e durata garantita dal salone.',
+          style: TextStyle(fontSize: 12, color: isDark ? Colors.white60 : AppColors.zinc500),
         ),
         const SizedBox(height: 16),
-        ...services.map((service) {
-          final isSelected = _selectedService?.id == service.id;
-          return Container(
-            margin: const EdgeInsets.only(bottom: 12),
-            decoration: BoxDecoration(
-              color: AppColors.white,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: isSelected ? AppColors.obsidianBlack : AppColors.zinc200,
-                width: isSelected ? 2 : 1,
-              ),
-            ),
-            child: ListTile(
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              onTap: () => setState(() => _selectedService = service),
-              title: Text(
-                service.name,
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-              ),
-              subtitle: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+        if (services.isEmpty)
+          Center(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 40),
+              child: Column(
                 children: [
-                  const SizedBox(height: 4),
-                  Text(service.description, style: const TextStyle(fontSize: 11, color: AppColors.zinc500)),
-                  const SizedBox(height: 6),
-                  Row(
-                    children: [
-                      const Icon(Icons.access_time, size: 12, color: AppColors.zinc400),
-                      const SizedBox(width: 4),
-                      Text('${service.durationMinutes} min', style: const TextStyle(fontSize: 11, color: AppColors.zinc600)),
-                    ],
+                  Icon(Icons.content_cut, size: 40, color: isDark ? Colors.white24 : AppColors.zinc300),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Caricamento listino ufficiale...',
+                    style: TextStyle(color: isDark ? Colors.white54 : AppColors.zinc500, fontSize: 13),
                   ),
                 ],
               ),
-              trailing: Text(
-                '€${service.price.toStringAsFixed(0)}',
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: AppColors.zinc900),
-              ),
             ),
-          );
-        }),
+          )
+        else
+          ...services.map((service) {
+            final isSelected = _selectedService?.id == service.id;
+            return Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF1E1E1E) : AppColors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: isSelected
+                      ? (isDark ? AppColors.gold : AppColors.obsidianBlack)
+                      : (isDark ? const Color(0xFF2A2A2A) : AppColors.zinc200),
+                  width: isSelected ? 2 : 1,
+                ),
+              ),
+              child: ListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                onTap: () => setState(() => _selectedService = service),
+                title: Text(
+                  service.name,
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                    color: isDark ? Colors.white : AppColors.zinc900,
+                  ),
+                ),
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (service.description.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        service.description,
+                        style: TextStyle(fontSize: 11, color: isDark ? Colors.white60 : AppColors.zinc500),
+                      ),
+                    ],
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        Icon(Icons.access_time, size: 12, color: isDark ? Colors.white54 : AppColors.zinc400),
+                        const SizedBox(width: 4),
+                        Text(
+                          '${service.durationMinutes} min',
+                          style: TextStyle(fontSize: 11, color: isDark ? Colors.white70 : AppColors.zinc600),
+                        ),
+                        const SizedBox(width: 10),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: isDark ? const Color(0xFF2A2A2A) : AppColors.zinc100,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            service.category,
+                            style: TextStyle(fontSize: 10, color: isDark ? Colors.white70 : AppColors.zinc600),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+                trailing: Text(
+                  '€${service.price.toStringAsFixed(0)}',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                    color: isDark ? AppColors.gold : AppColors.zinc900,
+                  ),
+                ),
+              ),
+            );
+          }),
       ],
     );
   }
 
   // STEP 2: Scelta Operatore
-  Widget _buildStaffSelection() {
+  Widget _buildStaffSelection(bool isDark) {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        const Text(
+        Text(
           '2. Scegli il tuo Stylist di Fiducia',
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.zinc900),
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: isDark ? Colors.white : AppColors.zinc900,
+          ),
         ),
         const SizedBox(height: 4),
-        const Text(
-          'Oppure lascia che il sistema assegni il primo professionista libero.',
-          style: TextStyle(fontSize: 12, color: AppColors.zinc500),
+        Text(
+          'Oppure lascia che il sistema assegni il primo professionista del salone libero.',
+          style: TextStyle(fontSize: 12, color: isDark ? Colors.white60 : AppColors.zinc500),
         ),
         const SizedBox(height: 16),
         ..._staffList.map((staff) {
@@ -167,29 +235,39 @@ class _BookingWizardScreenState extends State<BookingWizardScreen> {
           return Container(
             margin: const EdgeInsets.only(bottom: 12),
             decoration: BoxDecoration(
-              color: AppColors.white,
+              color: isDark ? const Color(0xFF1E1E1E) : AppColors.white,
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
-                color: isSelected ? AppColors.obsidianBlack : AppColors.zinc200,
+                color: isSelected
+                    ? (isDark ? AppColors.gold : AppColors.obsidianBlack)
+                    : (isDark ? const Color(0xFF2A2A2A) : AppColors.zinc200),
                 width: isSelected ? 2 : 1,
               ),
             ),
             child: ListTile(
               onTap: () => setState(() => _selectedStaff = staff),
               leading: CircleAvatar(
-                backgroundColor: isSelected ? AppColors.obsidianBlack : AppColors.zinc100,
+                backgroundColor: isSelected
+                    ? (isDark ? const Color(0xFF332915) : AppColors.obsidianBlack)
+                    : (isDark ? const Color(0xFF2A2A2A) : AppColors.zinc100),
                 child: Icon(
                   Icons.person,
-                  color: isSelected ? AppColors.white : AppColors.zinc500,
+                  color: isSelected
+                      ? (isDark ? AppColors.gold : AppColors.white)
+                      : (isDark ? Colors.white54 : AppColors.zinc500),
                   size: 20,
                 ),
               ),
               title: Text(
                 staff,
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
+                  color: isDark ? Colors.white : AppColors.zinc900,
+                ),
               ),
               trailing: isSelected
-                  ? const Icon(Icons.check_circle, color: AppColors.obsidianBlack)
+                  ? Icon(Icons.check_circle, color: isDark ? AppColors.gold : AppColors.obsidianBlack)
                   : null,
             ),
           );
@@ -199,19 +277,22 @@ class _BookingWizardScreenState extends State<BookingWizardScreen> {
   }
 
   // STEP 3: Data e Orario Live
-  Widget _buildDateTimeSelection() {
-
+  Widget _buildDateTimeSelection(bool isDark) {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        const Text(
+        Text(
           '3. Seleziona Data & Orario',
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.zinc900),
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: isDark ? Colors.white : AppColors.zinc900,
+          ),
         ),
         const SizedBox(height: 4),
-        const Text(
-          'Slot calcolati in tempo reale sulle disponibilità effettive del salone.',
-          style: TextStyle(fontSize: 12, color: AppColors.zinc500),
+        Text(
+          'Slot orari disponibili in tempo reale per questo salone.',
+          style: TextStyle(fontSize: 12, color: isDark ? Colors.white60 : AppColors.zinc500),
         ),
         const SizedBox(height: 16),
 
@@ -231,10 +312,14 @@ class _BookingWizardScreenState extends State<BookingWizardScreen> {
                 child: Container(
                   width: 58,
                   decoration: BoxDecoration(
-                    color: isSelected ? AppColors.obsidianBlack : AppColors.white,
+                    color: isSelected
+                        ? (isDark ? AppColors.gold : AppColors.obsidianBlack)
+                        : (isDark ? const Color(0xFF1E1E1E) : AppColors.white),
                     borderRadius: BorderRadius.circular(16),
                     border: Border.all(
-                      color: isSelected ? AppColors.obsidianBlack : AppColors.zinc200,
+                      color: isSelected
+                          ? (isDark ? AppColors.gold : AppColors.obsidianBlack)
+                          : (isDark ? const Color(0xFF2A2A2A) : AppColors.zinc200),
                     ),
                   ),
                   child: Column(
@@ -245,7 +330,9 @@ class _BookingWizardScreenState extends State<BookingWizardScreen> {
                         style: TextStyle(
                           fontSize: 10,
                           fontWeight: FontWeight.bold,
-                          color: isSelected ? AppColors.zinc400 : AppColors.zinc500,
+                          color: isSelected
+                              ? (isDark ? AppColors.obsidianBlack : AppColors.zinc400)
+                              : (isDark ? Colors.white54 : AppColors.zinc500),
                         ),
                       ),
                       const SizedBox(height: 4),
@@ -254,7 +341,9 @@ class _BookingWizardScreenState extends State<BookingWizardScreen> {
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w900,
-                          color: isSelected ? AppColors.white : AppColors.zinc900,
+                          color: isSelected
+                              ? (isDark ? AppColors.obsidianBlack : AppColors.white)
+                              : (isDark ? Colors.white : AppColors.zinc900),
                         ),
                       ),
                     ],
@@ -266,9 +355,13 @@ class _BookingWizardScreenState extends State<BookingWizardScreen> {
         ),
 
         const SizedBox(height: 24),
-        const Text(
+        Text(
           'Orari Disponibili',
-          style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.zinc900),
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.bold,
+            color: isDark ? Colors.white : AppColors.zinc900,
+          ),
         ),
         const SizedBox(height: 12),
 
@@ -283,10 +376,14 @@ class _BookingWizardScreenState extends State<BookingWizardScreen> {
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
                 decoration: BoxDecoration(
-                  color: isSelected ? AppColors.obsidianBlack : AppColors.white,
+                  color: isSelected
+                      ? (isDark ? AppColors.gold : AppColors.obsidianBlack)
+                      : (isDark ? const Color(0xFF1E1E1E) : AppColors.white),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
-                    color: isSelected ? AppColors.obsidianBlack : AppColors.zinc200,
+                    color: isSelected
+                        ? (isDark ? AppColors.gold : AppColors.obsidianBlack)
+                        : (isDark ? const Color(0xFF2A2A2A) : AppColors.zinc200),
                   ),
                 ),
                 child: Text(
@@ -294,7 +391,9 @@ class _BookingWizardScreenState extends State<BookingWizardScreen> {
                   style: TextStyle(
                     fontSize: 13,
                     fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
-                    color: isSelected ? AppColors.white : AppColors.zinc800,
+                    color: isSelected
+                        ? (isDark ? AppColors.obsidianBlack : AppColors.white)
+                        : (isDark ? Colors.white70 : AppColors.zinc800),
                   ),
                 ),
               ),
@@ -306,21 +405,33 @@ class _BookingWizardScreenState extends State<BookingWizardScreen> {
   }
 
   // STEP 4: Riepilogo & Conferma
-  Widget _buildConfirmationSummary() {
-    final service = _selectedService ?? context.read<SalonRepository>().services.first;
+  Widget _buildConfirmationSummary(bool isDark) {
+    final services = context.read<SalonRepository>().services;
+    final service = _selectedService ?? (services.isNotEmpty ? services.first : const SalonService(
+      id: 'srv-std',
+      name: 'Trattamento Salone',
+      category: 'Taglio',
+      price: 30.0,
+      durationMinutes: 30,
+      description: '',
+    ));
     final pointsEarned = (service.price * 0.10).floor();
 
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        const Text(
+        Text(
           '4. Riepilogo Prenotazione',
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.zinc900),
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: isDark ? Colors.white : AppColors.zinc900,
+          ),
         ),
         const SizedBox(height: 4),
-        const Text(
+        Text(
           'Verifica i dettagli prima di confermare il tuo appuntamento.',
-          style: TextStyle(fontSize: 12, color: AppColors.zinc500),
+          style: TextStyle(fontSize: 12, color: isDark ? Colors.white60 : AppColors.zinc500),
         ),
         const SizedBox(height: 16),
 
@@ -328,34 +439,49 @@ class _BookingWizardScreenState extends State<BookingWizardScreen> {
         Container(
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
-            color: AppColors.white,
+            color: isDark ? const Color(0xFF1E1E1E) : AppColors.white,
             borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: AppColors.zinc200),
+            border: Border.all(color: isDark ? const Color(0xFF2A2A2A) : AppColors.zinc200),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
                 widget.salon.name,
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: isDark ? Colors.white : AppColors.zinc900,
+                ),
               ),
               Text(
                 '${widget.salon.address}, ${widget.salon.city}',
-                style: const TextStyle(fontSize: 12, color: AppColors.zinc500),
+                style: TextStyle(fontSize: 12, color: isDark ? Colors.white60 : AppColors.zinc500),
               ),
-              const Divider(height: 24),
-              _summaryRow('Trattamento', service.name),
-              _summaryRow('Stylist', _selectedStaff),
-              _summaryRow('Data', DateFormat('d MMMM yyyy', 'it_IT').format(_selectedDate)),
-              _summaryRow('Orario', 'Ore $_selectedSlot (${service.durationMinutes} min)'),
-              const Divider(height: 24),
+              Divider(height: 24, color: isDark ? const Color(0xFF2A2A2A) : AppColors.zinc200),
+              _summaryRow('Trattamento', service.name, isDark),
+              _summaryRow('Stylist', _selectedStaff, isDark),
+              _summaryRow('Data', DateFormat('d MMMM yyyy', 'it_IT').format(_selectedDate), isDark),
+              _summaryRow('Orario', 'Ore $_selectedSlot (${service.durationMinutes} min)', isDark),
+              Divider(height: 24, color: isDark ? const Color(0xFF2A2A2A) : AppColors.zinc200),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('Totale da pagare in salone', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                  Text(
+                    'Totale da saldare in salone',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                      color: isDark ? Colors.white70 : AppColors.zinc800,
+                    ),
+                  ),
                   Text(
                     '€${service.price.toStringAsFixed(2)}',
-                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: AppColors.zinc900),
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                      color: isDark ? AppColors.gold : AppColors.zinc900,
+                    ),
                   ),
                 ],
               ),
@@ -369,7 +495,7 @@ class _BookingWizardScreenState extends State<BookingWizardScreen> {
         Container(
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
-            color: AppColors.goldSurface,
+            color: isDark ? const Color(0xFF332915) : AppColors.goldSurface,
             borderRadius: BorderRadius.circular(16),
             border: Border.all(color: AppColors.gold.withOpacity(0.3)),
           ),
@@ -380,7 +506,7 @@ class _BookingWizardScreenState extends State<BookingWizardScreen> {
               Expanded(
                 child: Text(
                   'Con questa visita accumulerai +$pointsEarned Punti VIP Club sulla tua tessera fedeltà Trimmy.',
-                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF92400E)),
+                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.gold),
                 ),
               ),
             ],
@@ -390,20 +516,24 @@ class _BookingWizardScreenState extends State<BookingWizardScreen> {
     );
   }
 
-  Widget _summaryRow(String label, String value) {
+  Widget _summaryRow(String label, String value, bool isDark) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: const TextStyle(fontSize: 12, color: AppColors.zinc500)),
+          Text(label, style: TextStyle(fontSize: 12, color: isDark ? Colors.white54 : AppColors.zinc500)),
           const SizedBox(width: 8),
           Flexible(
             child: Text(
               value,
               textAlign: TextAlign.right,
-              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.zinc800),
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                color: isDark ? Colors.white : AppColors.zinc800,
+              ),
             ),
           ),
         ],
@@ -411,13 +541,13 @@ class _BookingWizardScreenState extends State<BookingWizardScreen> {
     );
   }
 
-  Widget _buildBottomBar() {
+  Widget _buildBottomBar(bool isDark) {
     final isLastStep = _currentStep == 3;
 
     return Container(
-      decoration: const BoxDecoration(
-        color: AppColors.white,
-        border: Border(top: BorderSide(color: AppColors.zinc200)),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E1E1E) : AppColors.white,
+        border: Border(top: BorderSide(color: isDark ? const Color(0xFF2A2A2A) : AppColors.zinc200)),
       ),
       child: SafeArea(
         top: false,
@@ -441,8 +571,9 @@ class _BookingWizardScreenState extends State<BookingWizardScreen> {
                   onPressed: _isBooking
                       ? null
                       : () {
-                          if (_selectedService == null && _currentStep == 0) {
-                            _selectedService = context.read<SalonRepository>().services.first;
+                          final services = context.read<SalonRepository>().services;
+                          if (_selectedService == null && _currentStep == 0 && services.isNotEmpty) {
+                            _selectedService = services.first;
                           }
 
                           if (isLastStep) {
@@ -452,8 +583,8 @@ class _BookingWizardScreenState extends State<BookingWizardScreen> {
                           }
                         },
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.obsidianBlack,
-                    foregroundColor: AppColors.white,
+                    backgroundColor: isDark ? AppColors.gold : AppColors.obsidianBlack,
+                    foregroundColor: isDark ? AppColors.obsidianBlack : AppColors.white,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     padding: const EdgeInsets.symmetric(vertical: 14),
                   ),
@@ -478,7 +609,15 @@ class _BookingWizardScreenState extends State<BookingWizardScreen> {
 
   Future<void> _confirmBooking() async {
     setState(() => _isBooking = true);
-    final service = _selectedService ?? context.read<SalonRepository>().services.first;
+    final services = context.read<SalonRepository>().services;
+    final service = _selectedService ?? (services.isNotEmpty ? services.first : const SalonService(
+      id: 'srv-std',
+      name: 'Trattamento Salone',
+      category: 'Taglio',
+      price: 30.0,
+      durationMinutes: 30,
+      description: '',
+    ));
     final user = context.read<AuthRepository>().currentUser;
 
     // Crea l'appuntamento
@@ -536,82 +675,106 @@ class _SuccessBoardingPass extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return SafeArea(
       top: false,
       child: Container(
         padding: const EdgeInsets.all(24),
-        decoration: const BoxDecoration(
-          color: AppColors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF1E1E1E) : AppColors.white,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
         ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 40,
-            height: 4,
-            decoration: BoxDecoration(color: AppColors.zinc200, borderRadius: BorderRadius.circular(2)),
-          ),
-          const SizedBox(height: 20),
-          const Icon(Icons.check_circle, color: AppColors.emerald, size: 54),
-          const SizedBox(height: 12),
-          const Text(
-            'Prenotazione Confermata!',
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.zinc900),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Ti aspettiamo presso ${appointment.salonName}',
-            style: const TextStyle(fontSize: 13, color: AppColors.zinc500),
-          ),
-          const SizedBox(height: 20),
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: AppColors.zinc50,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: AppColors.zinc200),
-            ),
-            child: Column(
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(appointment.serviceName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                    Text('€${appointment.servicePrice.toStringAsFixed(0)}', style: const TextStyle(fontWeight: FontWeight.w900)),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                Row(
-                  children: [
-                    const Icon(Icons.calendar_today, size: 12, color: AppColors.zinc400),
-                    const SizedBox(width: 4),
-                    Text(
-                      DateFormat('EEE d MMM yyyy, HH:mm', 'it_IT').format(appointment.startTime),
-                      style: const TextStyle(fontSize: 12, color: AppColors.zinc600),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 24),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: () => Navigator.pop(context),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.obsidianBlack,
-                foregroundColor: AppColors.white,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF3A3A3A) : AppColors.zinc300,
+                borderRadius: BorderRadius.circular(2),
               ),
-              child: const Text('Chiudi e Vedi i Miei Appuntamenti', style: TextStyle(fontWeight: FontWeight.bold)),
             ),
-          ),
-        ],
+            const SizedBox(height: 20),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: const BoxDecoration(
+                color: Color(0xFFECFDF5),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.check_circle, color: AppColors.emeraldGreen, size: 48),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Appuntamento Confermato!',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: isDark ? Colors.white : AppColors.zinc900,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Registrato con successo nel Cloud del Salone.',
+              style: TextStyle(fontSize: 13, color: isDark ? Colors.white60 : AppColors.zinc500),
+            ),
+            const SizedBox(height: 20),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF2A2A2A) : AppColors.zinc50,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: isDark ? const Color(0xFF3A3A3A) : AppColors.zinc200),
+              ),
+              child: Column(
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Salone', style: TextStyle(fontSize: 12, color: isDark ? Colors.white54 : AppColors.zinc500)),
+                      Text(appointment.salonName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Trattamento', style: TextStyle(fontSize: 12, color: isDark ? Colors.white54 : AppColors.zinc500)),
+                      Text(appointment.serviceName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Data & Ora', style: TextStyle(fontSize: 12, color: isDark ? Colors.white54 : AppColors.zinc500)),
+                      Text(
+                        '${DateFormat('dd/MM/yyyy').format(appointment.startTime)} ore ${DateFormat('HH:mm').format(appointment.startTime)}',
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.emeraldGreen),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () => Navigator.pop(context),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: isDark ? AppColors.gold : AppColors.obsidianBlack,
+                  foregroundColor: isDark ? AppColors.obsidianBlack : AppColors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                child: const Text('Chiudi e Vai ai Miei Appuntamenti', style: TextStyle(fontWeight: FontWeight.bold)),
+              ),
+            ),
+          ],
+        ),
       ),
-    ),
-  );
-}
+    );
+  }
 }

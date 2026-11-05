@@ -26,6 +26,16 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
     'Centro Estetico',
   ];
 
+  final List<String> _keywordSuggestions = [
+    'Civitanova Marche',
+    'Barber Shop',
+    'Hair Stylist',
+    'Taglio',
+    'Colore',
+    'Trattamenti',
+    'Milano',
+  ];
+
   @override
   void dispose() {
     _searchController.dispose();
@@ -149,54 +159,45 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                   style: TextStyle(fontSize: 12, color: AppColors.zinc500),
                 ),
                 const SizedBox(height: 16),
-
-                // Pulsante GPS
                 ListTile(
                   contentPadding: EdgeInsets.zero,
                   leading: Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: locationService.isGpsActive ? AppColors.obsidianBlack : AppColors.zinc100,
-                      shape: BoxShape.circle,
+                      color: locationService.isGpsActive ? AppColors.emerald.withOpacity(0.15) : AppColors.zinc100,
+                      borderRadius: BorderRadius.circular(10),
                     ),
                     child: Icon(
                       Icons.my_location,
-                      color: locationService.isGpsActive ? AppColors.white : AppColors.zinc700,
+                      color: locationService.isGpsActive ? AppColors.emerald : AppColors.zinc700,
                       size: 20,
                     ),
                   ),
-                  title: const Text(
-                    'Usa la mia posizione attuale (GPS)',
-                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
-                  ),
+                  title: const Text('Posizione GPS Attuale', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                   subtitle: Text(
-                    locationService.isGpsActive ? 'Attivo — Saloni ordinati per distanza' : 'Richiede autorizzazione GPS runtime',
-                    style: TextStyle(fontSize: 11, color: locationService.isGpsActive ? AppColors.emerald : AppColors.zinc400),
+                    locationService.isGpsActive
+                        ? 'Attiva (${locationService.currentCity ?? "Rilevata"})'
+                        : 'Tocca per attivare geolocalizzazione automatica',
+                    style: const TextStyle(fontSize: 12, color: AppColors.zinc500),
                   ),
-                  trailing: locationService.isLocating
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.obsidianBlack),
-                        )
+                  trailing: locationService.isGpsActive
+                      ? const Icon(Icons.check_circle, color: AppColors.emerald, size: 20)
                       : null,
-                  onTap: () {
+                  onTap: () async {
                     Navigator.pop(ctx);
-                    _handleGpsRequest(context, locationService);
+                    await _handleGpsRequest(context, locationService);
                   },
                 ),
-
                 const Divider(height: 24),
                 const Text(
                   'Oppure seleziona una città:',
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.zinc400),
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.zinc700),
                 ),
-                const SizedBox(height: 8),
-
+                const SizedBox(height: 10),
                 Wrap(
                   spacing: 8,
                   runSpacing: 8,
-                  children: LocationService.cityPresets.keys.map((city) {
+                  children: locationService.presetCities.map((city) {
                     final isCurrent = !locationService.isGpsActive && locationService.selectedCity == city;
                     return ChoiceChip(
                       label: Text(city),
@@ -234,6 +235,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
   Widget build(BuildContext context) {
     final salonRepo = context.watch<SalonRepository>();
     final locationService = context.watch<LocationService>();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     final salons = salonRepo.searchSalons(
       _searchQuery,
@@ -244,17 +246,17 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
     );
 
     return Scaffold(
-      backgroundColor: AppColors.zinc50,
+      backgroundColor: isDark ? const Color(0xFF121212) : AppColors.zinc50,
       appBar: AppBar(
         title: Row(
           children: [
             Container(
               padding: const EdgeInsets.all(6),
               decoration: BoxDecoration(
-                color: AppColors.obsidianBlack,
+                color: isDark ? AppColors.gold : AppColors.obsidianBlack,
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: const Icon(Icons.content_cut, color: AppColors.white, size: 16),
+              child: Icon(Icons.content_cut, color: isDark ? AppColors.obsidianBlack : AppColors.white, size: 16),
             ),
             const SizedBox(width: 8),
             const Text(
@@ -265,9 +267,9 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
               decoration: BoxDecoration(
-                color: AppColors.zinc100,
+                color: isDark ? const Color(0xFF2A2A2A) : AppColors.zinc100,
                 borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: AppColors.zinc200),
+                border: Border.all(color: isDark ? const Color(0xFF3A3A3A) : AppColors.zinc200),
               ),
               child: const Text(
                 'DISCOVER',
@@ -290,30 +292,30 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                       decoration: BoxDecoration(
-                        color: AppColors.white,
+                        color: isDark ? const Color(0xFF1E1E1E) : AppColors.white,
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: AppColors.zinc200),
+                        border: Border.all(color: isDark ? const Color(0xFF2A2A2A) : AppColors.zinc200),
                       ),
                       child: Row(
                         children: [
                           Icon(
                             locationService.isGpsActive ? Icons.near_me : Icons.location_on,
                             size: 15,
-                            color: locationService.isGpsActive ? AppColors.emerald : AppColors.zinc700,
+                            color: locationService.isGpsActive ? AppColors.emerald : AppColors.gold,
                           ),
                           const SizedBox(width: 6),
                           Expanded(
                             child: Text(
                               locationService.selectedCity,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.bold,
-                                color: AppColors.zinc900,
+                                color: isDark ? Colors.white : AppColors.zinc900,
                               ),
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
-                          const Icon(Icons.keyboard_arrow_down, size: 16, color: AppColors.zinc400),
+                          Icon(Icons.keyboard_arrow_down, size: 16, color: isDark ? Colors.white54 : AppColors.zinc400),
                         ],
                       ),
                     ),
@@ -324,18 +326,25 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                   tooltip: 'Aggiorna posizione GPS',
                   onPressed: locationService.isLocating ? null : () => _handleGpsRequest(context, locationService),
                   style: IconButton.styleFrom(
-                    backgroundColor: locationService.isGpsActive ? AppColors.obsidianBlack : AppColors.white,
-                    foregroundColor: locationService.isGpsActive ? AppColors.white : AppColors.zinc700,
+                    backgroundColor: locationService.isGpsActive
+                        ? (isDark ? AppColors.gold : AppColors.obsidianBlack)
+                        : (isDark ? const Color(0xFF1E1E1E) : AppColors.white),
+                    foregroundColor: locationService.isGpsActive
+                        ? (isDark ? AppColors.obsidianBlack : AppColors.white)
+                        : (isDark ? Colors.white : AppColors.zinc700),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
-                      side: BorderSide(color: AppColors.zinc200),
+                      side: BorderSide(color: isDark ? const Color(0xFF2A2A2A) : AppColors.zinc200),
                     ),
                   ),
                   icon: locationService.isLocating
-                      ? const SizedBox(
+                      ? SizedBox(
                           width: 16,
                           height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.zinc700),
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: isDark ? AppColors.gold : AppColors.zinc700,
+                          ),
                         )
                       : const Icon(Icons.my_location, size: 18),
                 ),
@@ -343,32 +352,101 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
             ),
           ),
 
-          // 1. Barra di Ricerca
+          // 1. Barra di Ricerca Intelligente
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 6),
             child: Container(
+              height: 44,
               decoration: BoxDecoration(
-                color: AppColors.white,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: AppColors.zinc200),
+                color: isDark ? const Color(0xFF1E1E1E) : AppColors.white,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: isDark ? const Color(0xFF2A2A2A) : AppColors.zinc200),
               ),
-              child: TextField(
-                controller: _searchController,
-                onChanged: (val) => setState(() => _searchQuery = val),
-                decoration: const InputDecoration(
-                  hintText: 'Cerca per nome salone o via...',
-                  hintStyle: TextStyle(color: AppColors.zinc400, fontSize: 13),
-                  prefixIcon: Icon(Icons.search, color: AppColors.zinc400, size: 20),
-                  border: InputBorder.none,
-                  contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                ),
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Row(
+                children: [
+                  const Icon(Icons.search, color: AppColors.zinc400, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: TextField(
+                      controller: _searchController,
+                      onChanged: (val) => setState(() => _searchQuery = val.trim()),
+                      style: TextStyle(fontSize: 13, color: isDark ? Colors.white : AppColors.zinc900),
+                      decoration: const InputDecoration(
+                        hintText: 'Cerca salone, via o trattamento...',
+                        hintStyle: TextStyle(color: AppColors.zinc400, fontSize: 13),
+                        border: InputBorder.none,
+                        isDense: true,
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                  ),
+                  if (_searchQuery.isNotEmpty)
+                    GestureDetector(
+                      onTap: () {
+                        _searchController.clear();
+                        setState(() => _searchQuery = '');
+                      },
+                      child: const Icon(Icons.close, size: 18, color: AppColors.zinc400),
+                    ),
+                ],
               ),
             ),
           ),
 
-          // 2. Chip Categorie Orizzontali
+          // 2. Chip Consigli Parole Chiave per Ricerca Semplificata
           SizedBox(
-            height: 40,
+            height: 32,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              itemCount: _keywordSuggestions.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 6),
+              itemBuilder: (context, idx) {
+                final kw = _keywordSuggestions[idx];
+                final isKwActive = _searchQuery.toLowerCase() == kw.toLowerCase();
+                return ActionChip(
+                  label: Text(
+                    '#$kw',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: isKwActive ? FontWeight.bold : FontWeight.w500,
+                      color: isKwActive
+                          ? AppColors.gold
+                          : (isDark ? Colors.white70 : AppColors.zinc700),
+                    ),
+                  ),
+                  backgroundColor: isKwActive
+                      ? (isDark ? const Color(0xFF332915) : const Color(0xFFFEF3C7))
+                      : (isDark ? const Color(0xFF1E1E1E) : AppColors.white),
+                  side: BorderSide(
+                    color: isKwActive
+                        ? AppColors.gold
+                        : (isDark ? const Color(0xFF2A2A2A) : AppColors.zinc200),
+                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () {
+                    setState(() {
+                      if (isKwActive) {
+                        _searchController.clear();
+                        _searchQuery = '';
+                      } else {
+                        _searchController.text = kw;
+                        _searchQuery = kw;
+                      }
+                    });
+                  },
+                );
+              },
+            ),
+          ),
+
+          const SizedBox(height: 8),
+
+          // 3. Chip Categorie Orizzontali
+          SizedBox(
+            height: 36,
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -377,55 +455,67 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
               itemBuilder: (context, index) {
                 final cat = _categories[index];
                 final isSelected = _selectedCategory == cat;
-                return GestureDetector(
-                  onTap: () => setState(() => _selectedCategory = cat),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: isSelected ? AppColors.obsidianBlack : AppColors.white,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color: isSelected ? AppColors.obsidianBlack : AppColors.zinc200,
-                      ),
-                    ),
-                    child: Center(
-                      child: Text(
-                        cat,
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                          color: isSelected ? AppColors.white : AppColors.zinc700,
-                        ),
-                      ),
+                return ChoiceChip(
+                  label: Text(
+                    cat,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                      color: isSelected
+                          ? (isDark ? AppColors.obsidianBlack : AppColors.white)
+                          : (isDark ? Colors.white70 : AppColors.zinc700),
                     ),
                   ),
+                  selected: isSelected,
+                  selectedColor: isDark ? AppColors.gold : AppColors.obsidianBlack,
+                  backgroundColor: isDark ? const Color(0xFF1E1E1E) : AppColors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    side: BorderSide(
+                      color: isSelected
+                          ? (isDark ? AppColors.gold : AppColors.obsidianBlack)
+                          : (isDark ? const Color(0xFF2A2A2A) : AppColors.zinc200),
+                    ),
+                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  onSelected: (_) => setState(() => _selectedCategory = cat),
                 );
               },
             ),
           ),
 
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
 
-          // 3. Lista Saloni (Card Stile Airbnb / Treatwell con badge distanza GPS)
+          // 4. Lista Saloni Reali (con rating, foto e distanza GPS)
           Expanded(
             child: salons.isEmpty
                 ? Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(Icons.storefront, color: AppColors.zinc300, size: 48),
-                        const SizedBox(height: 8),
-                        const Text(
-                          'Nessun salone trovato.',
-                          style: TextStyle(color: AppColors.zinc500, fontSize: 13, fontWeight: FontWeight.w600),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Prova a cambiare categoria o zona (${locationService.selectedCity}).',
-                          style: const TextStyle(color: AppColors.zinc400, fontSize: 11),
-                        ),
-                      ],
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.storefront, color: isDark ? Colors.white30 : AppColors.zinc300, size: 48),
+                          const SizedBox(height: 10),
+                          Text(
+                            _searchQuery.isNotEmpty
+                                ? 'Nessun salone trovato per "$_searchQuery".'
+                                : 'Nessun salone disponibile in questa categoria.',
+                            style: TextStyle(
+                              color: isDark ? Colors.white70 : AppColors.zinc700,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Prova a selezionare un\'altra categoria o cambiare città (${locationService.selectedCity}).',
+                            style: TextStyle(color: isDark ? Colors.white54 : AppColors.zinc400, fontSize: 12),
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                      ),
                     ),
                   )
                 : ListView.builder(
@@ -437,6 +527,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                       return _SalonCard(
                         salon: salon,
                         distanceStr: distanceStr,
+                        isDark: isDark,
                         onBook: () {
                           Navigator.push(
                             context,
@@ -458,11 +549,13 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
 class _SalonCard extends StatelessWidget {
   final Salon salon;
   final String distanceStr;
+  final bool isDark;
   final VoidCallback onBook;
 
   const _SalonCard({
     required this.salon,
     required this.distanceStr,
+    required this.isDark,
     required this.onBook,
   });
 
@@ -471,12 +564,12 @@ class _SalonCard extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
-        color: AppColors.white,
+        color: isDark ? const Color(0xFF1E1E1E) : AppColors.white,
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: AppColors.zinc200),
+        border: Border.all(color: isDark ? const Color(0xFF2A2A2A) : AppColors.zinc200),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.03),
+            color: Colors.black.withOpacity(isDark ? 0.3 : 0.03),
             blurRadius: 10,
             offset: const Offset(0, 4),
           ),
@@ -497,7 +590,7 @@ class _SalonCard extends StatelessWidget {
                   fit: BoxFit.cover,
                   errorBuilder: (_, __, ___) => Container(
                     height: 170,
-                    color: AppColors.zinc200,
+                    color: isDark ? const Color(0xFF2A2A2A) : AppColors.zinc200,
                     child: const Icon(Icons.storefront, color: AppColors.zinc400, size: 48),
                   ),
                 ),
@@ -543,13 +636,13 @@ class _SalonCard extends StatelessWidget {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                       decoration: BoxDecoration(
-                        color: AppColors.white,
+                        color: isDark ? const Color(0xFF2A2A2A) : AppColors.white,
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Text(
                         salon.category,
-                        style: const TextStyle(
-                          color: AppColors.zinc900,
+                        style: TextStyle(
+                          color: isDark ? Colors.white : AppColors.zinc900,
                           fontWeight: FontWeight.bold,
                           fontSize: 10,
                           letterSpacing: 0.3,
@@ -599,19 +692,19 @@ class _SalonCard extends StatelessWidget {
                     Expanded(
                       child: Text(
                         salon.name,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
-                          color: AppColors.zinc900,
+                          color: isDark ? Colors.white : AppColors.zinc900,
                         ),
                       ),
                     ),
                     Text(
                       'da €${salon.minPrice.toInt()}',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w900,
-                        color: AppColors.zinc900,
+                        color: isDark ? AppColors.gold : AppColors.zinc900,
                       ),
                     ),
                   ],
@@ -624,7 +717,7 @@ class _SalonCard extends StatelessWidget {
                     Expanded(
                       child: Text(
                         '${salon.address}, ${salon.city}',
-                        style: const TextStyle(fontSize: 12, color: AppColors.zinc500),
+                        style: TextStyle(fontSize: 12, color: isDark ? Colors.white60 : AppColors.zinc500),
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
@@ -636,8 +729,8 @@ class _SalonCard extends StatelessWidget {
                   child: ElevatedButton(
                     onPressed: onBook,
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.obsidianBlack,
-                      foregroundColor: AppColors.white,
+                      backgroundColor: isDark ? AppColors.gold : AppColors.obsidianBlack,
+                      foregroundColor: isDark ? AppColors.obsidianBlack : AppColors.white,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       padding: const EdgeInsets.symmetric(vertical: 12),
                     ),

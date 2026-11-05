@@ -8,7 +8,7 @@ class FidelityRepository extends ChangeNotifier {
   static const String _loyaltyStorageKey = 'trimmy_fidelity_loyalty';
   static const String _packagesStorageKey = 'trimmy_fidelity_packages';
 
-  CustomerLoyalty _clientLoyalty = CustomerLoyalty.fromPoints('demo-client-1', 180, 240);
+  CustomerLoyalty _clientLoyalty = CustomerLoyalty.fromPoints('', 0, 0);
   final List<CustomerPackage> _clientPackages = [];
 
   CustomerLoyalty get clientLoyalty => _clientLoyalty;
@@ -22,11 +22,14 @@ class FidelityRepository extends ChangeNotifier {
     try {
       final prefs = await SharedPreferences.getInstance();
       
-      // Carica saldo punti
+      // Carica saldo punti se valido e non legato al vecchio mock demo-client-1
       final rawLoyalty = prefs.getString(_loyaltyStorageKey);
       if (rawLoyalty != null && rawLoyalty.isNotEmpty) {
         final decoded = jsonDecode(rawLoyalty) as Map<String, dynamic>;
-        _clientLoyalty = CustomerLoyalty.fromJson(decoded);
+        final parsed = CustomerLoyalty.fromJson(decoded);
+        if (parsed.customerId != 'demo-client-1' && parsed.customerId.isNotEmpty) {
+          _clientLoyalty = parsed;
+        }
       }
 
       // Carica pacchetti carnet
@@ -34,37 +37,15 @@ class FidelityRepository extends ChangeNotifier {
       if (rawPackages != null && rawPackages.isNotEmpty) {
         final decoded = jsonDecode(rawPackages) as List<dynamic>;
         _clientPackages.clear();
-        _clientPackages.addAll(decoded.map((item) => CustomerPackage.fromJson(item as Map<String, dynamic>)));
+        _clientPackages.addAll(decoded
+            .map((item) => CustomerPackage.fromJson(item as Map<String, dynamic>))
+            .where((p) => p.id != 'cpkg-1' && p.id != 'cpkg-2'));
         notifyListeners();
         return;
       }
     } catch (e) {
       debugPrint('Nota ripristino fidelity disco: $e');
     }
-
-    // Default seed per primo avvio
-    _clientPackages.addAll([
-      CustomerPackage(
-        id: 'cpkg-1',
-        packageName: 'Carnet Piega 5 + 1 Omaggio',
-        serviceName: 'Piega & Styling Glamour',
-        totalSessions: 6,
-        remainingSessions: 4,
-        expiryDate: DateTime.now().add(const Duration(days: 120)),
-        status: 'ACTIVE',
-      ),
-      CustomerPackage(
-        id: 'cpkg-2',
-        packageName: 'Pacchetto Barba Ritual 3 + 1',
-        serviceName: 'Rasatura Tradizionale & Panno Caldo',
-        totalSessions: 4,
-        remainingSessions: 2,
-        expiryDate: DateTime.now().add(const Duration(days: 90)),
-        status: 'ACTIVE',
-      ),
-    ]);
-    _saveToDisk();
-    notifyListeners();
   }
 
   Future<void> _saveToDisk() async {

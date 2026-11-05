@@ -386,6 +386,31 @@ class AuthRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Aggiorna i dati del salone nel profilo utente attivo
+  Future<void> updateSalonData({
+    required String salonName,
+    String? photoUrl,
+    String? imageUrl,
+    String? phone,
+    String? address,
+    String? city,
+    String? category,
+  }) async {
+    if (_currentUser == null) return;
+    _currentUser = AppUser(
+      id: _currentUser!.id,
+      email: _currentUser!.email,
+      displayName: salonName,
+      phone: phone ?? _currentUser!.phone,
+      role: _currentUser!.role,
+      salonId: _currentUser!.salonId ?? _currentUser!.id,
+      salonName: salonName,
+      photoUrl: photoUrl ?? imageUrl ?? _currentUser!.photoUrl,
+    );
+    await _saveSessionToDisk(_currentUser);
+    notifyListeners();
+  }
+
   /// Disconnette l'utente da Firebase e rimuove la sessione dal dispositivo
   Future<void> signOut() async {
     try {

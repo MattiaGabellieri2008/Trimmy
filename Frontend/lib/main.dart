@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'core/theme/app_theme.dart';
+import 'core/theme/theme_repository.dart';
 import 'core/services/location_service.dart';
 import 'core/network/api_client.dart';
 import 'data/repositories/auth_repository.dart';
@@ -34,6 +35,7 @@ void main() async {
   runApp(
     MultiProvider(
       providers: [
+        ChangeNotifierProvider(create: (_) => ThemeRepository()),
         ChangeNotifierProvider(create: (_) => AuthRepository()),
         ChangeNotifierProvider(create: (_) => SalonRepository()),
         ChangeNotifierProvider(create: (_) => AppointmentRepository()),
@@ -51,12 +53,14 @@ class TrimmyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final themeRepo = context.watch<ThemeRepository>();
+
     return MaterialApp(
       title: 'Trimmy Mobile',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,
-      themeMode: ThemeMode.light,
+      themeMode: themeRepo.themeMode,
       home: const AppRootRouter(),
     );
   }
@@ -81,6 +85,7 @@ class AppRootRouter extends StatelessWidget {
       return const SalonMainScreen();
     }
 
+    // Default per ruolo Cliente
     return const ClientMainScreen();
   }
 }

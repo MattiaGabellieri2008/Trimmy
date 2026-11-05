@@ -13,6 +13,7 @@ class AppointmentRepository extends ChangeNotifier {
   StreamSubscription<User?>? _authSub;
 
   List<Appointment> get allAppointments => _appointments;
+  List<Appointment> get appointments => _appointments;
 
   AppointmentRepository() {
     _loadFromDisk();
@@ -83,7 +84,12 @@ class AppointmentRepository extends ChangeNotifier {
       if (raw != null && raw.isNotEmpty) {
         final decoded = jsonDecode(raw) as List<dynamic>;
         _appointments.clear();
-        _appointments.addAll(decoded.map((item) => Appointment.fromJson(item as Map<String, dynamic>)));
+        // Filtra via appuntamenti finti o demo
+        final loaded = decoded
+            .map((item) => Appointment.fromJson(item as Map<String, dynamic>))
+            .where((a) => a.salonId != 'salon-1' && !a.salonName.contains('Duomo'))
+            .toList();
+        _appointments.addAll(loaded);
         if (_appointments.isNotEmpty) {
           notifyListeners();
           return;
@@ -92,82 +98,6 @@ class AppointmentRepository extends ChangeNotifier {
     } catch (e) {
       debugPrint('Nota ripristino appuntamenti disco: $e');
     }
-
-    // Default seed per primo avvio (allineato con la giornata odierna)
-    final now = DateTime.now();
-    _appointments.addAll([
-      Appointment(
-        id: 'appt-1',
-        salonId: 'salon-1',
-        salonName: 'Atelier Bellezza Duomo',
-        salonAddress: 'Piazza del Duomo 12, Milano',
-        customerId: 'demo-client-1',
-        customerName: 'Mario Rossi',
-        customerPhone: '+39 340 1234567',
-        serviceId: 'srv-taglio-d',
-        serviceName: 'Taglio Sartoriale & Piega',
-        servicePrice: 45.0,
-        staffId: 'staff-1',
-        staffName: 'Marco (Master)',
-        startTime: DateTime(now.year, now.month, now.day, 10, 0),
-        endTime: DateTime(now.year, now.month, now.day, 10, 45),
-        status: AppointmentStatus.confirmed,
-      ),
-      Appointment(
-        id: 'appt-2',
-        salonId: 'salon-1',
-        salonName: 'Atelier Bellezza Duomo',
-        salonAddress: 'Piazza del Duomo 12, Milano',
-        customerId: 'client-2',
-        customerName: 'Giulia Bianchi',
-        customerPhone: '+39 333 9988776',
-        serviceId: 'srv-balayage',
-        serviceName: 'Balayage Sfumato & Gloss',
-        servicePrice: 95.0,
-        staffId: 'staff-2',
-        staffName: 'Elena (Colorist)',
-        startTime: DateTime(now.year, now.month, now.day, 11, 30),
-        endTime: DateTime(now.year, now.month, now.day, 12, 45),
-        status: AppointmentStatus.confirmed,
-      ),
-      Appointment(
-        id: 'appt-block-1',
-        salonId: 'salon-1',
-        salonName: 'Atelier Bellezza Duomo',
-        salonAddress: 'Piazza del Duomo 12, Milano',
-        customerId: '',
-        customerName: 'Staff Salone',
-        customerPhone: '',
-        serviceId: 'block-lunch',
-        serviceName: 'Pausa Pranzo Team',
-        servicePrice: 0.0,
-        staffId: 'staff-all',
-        staffName: 'Tutti',
-        startTime: DateTime(now.year, now.month, now.day, 13, 0),
-        endTime: DateTime(now.year, now.month, now.day, 14, 0),
-        status: AppointmentStatus.blocked,
-        notes: 'Chiusura intermedia per sanificazione e pausa',
-      ),
-      Appointment(
-        id: 'appt-3',
-        salonId: 'salon-1',
-        salonName: 'Atelier Bellezza Duomo',
-        salonAddress: 'Piazza del Duomo 12, Milano',
-        customerId: 'client-3',
-        customerName: 'Alessandro Volta',
-        customerPhone: '+39 347 1122334',
-        serviceId: 'srv-barba',
-        serviceName: 'Modellatura Barba Luxury',
-        servicePrice: 28.0,
-        staffId: 'staff-1',
-        staffName: 'Marco (Master)',
-        startTime: DateTime(now.year, now.month, now.day, 15, 0),
-        endTime: DateTime(now.year, now.month, now.day, 15, 30),
-        status: AppointmentStatus.confirmed,
-      ),
-    ]);
-    _saveToDisk();
-    notifyListeners();
   }
 
   Future<void> _saveToDisk() async {

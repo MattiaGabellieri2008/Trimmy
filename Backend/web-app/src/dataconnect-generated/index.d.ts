@@ -56,6 +56,38 @@ export interface DeleteAppointmentVariables {
   id: UUIDString;
 }
 
+export interface DeleteCustomerData {
+  customer_delete?: Customer_Key | null;
+}
+
+export interface DeleteCustomerVariables {
+  id: UUIDString;
+}
+
+export interface DeleteServiceData {
+  service_delete?: Service_Key | null;
+}
+
+export interface DeleteServiceVariables {
+  id: UUIDString;
+}
+
+export interface DeleteTenantData {
+  tenant_delete?: Tenant_Key | null;
+}
+
+export interface DeleteTenantVariables {
+  id: UUIDString;
+}
+
+export interface DeleteUserData {
+  user_delete?: User_Key | null;
+}
+
+export interface DeleteUserVariables {
+  id: string;
+}
+
 export interface GetCustomerDetailsData {
   customer?: {
     id: UUIDString;
@@ -379,6 +411,18 @@ export const updateCustomerRef: UpdateCustomerRef;
 export function updateCustomer(vars: UpdateCustomerVariables): MutationPromise<UpdateCustomerData, UpdateCustomerVariables>;
 export function updateCustomer(dc: DataConnect, vars: UpdateCustomerVariables): MutationPromise<UpdateCustomerData, UpdateCustomerVariables>;
 
+interface DeleteCustomerRef {
+  /* Allow users to create refs without passing in DataConnect */
+  (vars: DeleteCustomerVariables): MutationRef<DeleteCustomerData, DeleteCustomerVariables>;
+  /* Allow users to pass in custom DataConnect instances */
+  (dc: DataConnect, vars: DeleteCustomerVariables): MutationRef<DeleteCustomerData, DeleteCustomerVariables>;
+  operationName: string;
+}
+export const deleteCustomerRef: DeleteCustomerRef;
+
+export function deleteCustomer(vars: DeleteCustomerVariables): MutationPromise<DeleteCustomerData, DeleteCustomerVariables>;
+export function deleteCustomer(dc: DataConnect, vars: DeleteCustomerVariables): MutationPromise<DeleteCustomerData, DeleteCustomerVariables>;
+
 interface InserisciDatiDiProvaRef {
   /* Allow users to create refs without passing in DataConnect */
   (): MutationRef<InserisciDatiDiProvaData, undefined>;
@@ -414,6 +458,42 @@ export const updateTenantOnboardingRef: UpdateTenantOnboardingRef;
 
 export function updateTenantOnboarding(vars: UpdateTenantOnboardingVariables): MutationPromise<UpdateTenantOnboardingData, UpdateTenantOnboardingVariables>;
 export function updateTenantOnboarding(dc: DataConnect, vars: UpdateTenantOnboardingVariables): MutationPromise<UpdateTenantOnboardingData, UpdateTenantOnboardingVariables>;
+
+interface DeleteTenantRef {
+  /* Allow users to create refs without passing in DataConnect */
+  (vars: DeleteTenantVariables): MutationRef<DeleteTenantData, DeleteTenantVariables>;
+  /* Allow users to pass in custom DataConnect instances */
+  (dc: DataConnect, vars: DeleteTenantVariables): MutationRef<DeleteTenantData, DeleteTenantVariables>;
+  operationName: string;
+}
+export const deleteTenantRef: DeleteTenantRef;
+
+export function deleteTenant(vars: DeleteTenantVariables): MutationPromise<DeleteTenantData, DeleteTenantVariables>;
+export function deleteTenant(dc: DataConnect, vars: DeleteTenantVariables): MutationPromise<DeleteTenantData, DeleteTenantVariables>;
+
+interface DeleteUserRef {
+  /* Allow users to create refs without passing in DataConnect */
+  (vars: DeleteUserVariables): MutationRef<DeleteUserData, DeleteUserVariables>;
+  /* Allow users to pass in custom DataConnect instances */
+  (dc: DataConnect, vars: DeleteUserVariables): MutationRef<DeleteUserData, DeleteUserVariables>;
+  operationName: string;
+}
+export const deleteUserRef: DeleteUserRef;
+
+export function deleteUser(vars: DeleteUserVariables): MutationPromise<DeleteUserData, DeleteUserVariables>;
+export function deleteUser(dc: DataConnect, vars: DeleteUserVariables): MutationPromise<DeleteUserData, DeleteUserVariables>;
+
+interface DeleteServiceRef {
+  /* Allow users to create refs without passing in DataConnect */
+  (vars: DeleteServiceVariables): MutationRef<DeleteServiceData, DeleteServiceVariables>;
+  /* Allow users to pass in custom DataConnect instances */
+  (dc: DataConnect, vars: DeleteServiceVariables): MutationRef<DeleteServiceData, DeleteServiceVariables>;
+  operationName: string;
+}
+export const deleteServiceRef: DeleteServiceRef;
+
+export function deleteService(vars: DeleteServiceVariables): MutationPromise<DeleteServiceData, DeleteServiceVariables>;
+export function deleteService(dc: DataConnect, vars: DeleteServiceVariables): MutationPromise<DeleteServiceData, DeleteServiceVariables>;
 
 interface GetDailyAppointmentsRef {
   /* Allow users to create refs without passing in DataConnect */

@@ -77,3 +77,8 @@ mutation UpdateCustomer(
     }
   )
 }
+
+
+mutation DeleteCustomer($id: UUID!) @auth(level: PUBLIC, insecureReason: "Prototyping") {
+  customer_delete(id: $id)
+}

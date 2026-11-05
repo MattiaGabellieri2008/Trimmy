@@ -34,9 +34,12 @@ class LocationService extends ChangeNotifier {
   String? get lastErrorMessage => _lastErrorMessage;
   bool get hasLocation => _currentLocation != null;
   bool get isGpsActive => _currentLocation?.isGpsFix ?? false;
+  String? get currentCity => _currentLocation?.cityName;
+  List<String> get presetCities => cityPresets.keys.toList();
 
   // Coordinate di riferimento per le città italiane predefinite (fallback immediato)
   static const Map<String, UserLocation> cityPresets = {
+    'Civitanova Marche': UserLocation(latitude: 43.3073, longitude: 13.7214, cityName: 'Civitanova Marche', isGpsFix: false),
     'Milano': UserLocation(latitude: 45.4642, longitude: 9.1900, cityName: 'Milano', isGpsFix: false),
     'Roma': UserLocation(latitude: 41.9028, longitude: 12.4964, cityName: 'Roma', isGpsFix: false),
     'Torino': UserLocation(latitude: 45.0703, longitude: 7.6869, cityName: 'Torino', isGpsFix: false),
