@@ -23,9 +23,13 @@ rules_version = '2';
 //      * /notification_logs/{logId}: Registro storico notifiche push FCM
 //      * /settings/{settingId}: Configurazioni (orari di apertura working_hours, brand palette, fidelity)
 //      * /schedule_locks/{lockId}: Lock atomici di slot orari per prevenire collisioni e double-booking
+//        [Rafforzato: Scrittura riservata a isSalonAuthorized(salonId) oppure all'utente per il proprio lock]
 //      * /clienti/{clientId}: Schede clienti confidenziali (note tecniche, formule colore, debiti)
 //        [SEC-01 & SEC-02: Scrittura riservata rigorosamente a isSalonAuthorized(salonId)]
 //      * /appuntamenti/{appId}: Prenotazioni nell'agenda del salone
+//        [Creazione: salone autorizzato o cliente autenticato per se stesso con stati validi (confirmed, pending).
+//         Aggiornamento: salone autorizzato completo; cliente limitato a sola cancellazione (cancelled/CANCELLED) con campi critici immutabili.
+//         Cancellazione: consentita a salone autorizzato o cliente associato]
 //      * /transactions/{txId}: Ricevute di cassa e pagamenti
 //      * /daily_closings/{closingId}: Chiusure di cassa serali fiscali
 //      * /prodotti/{prodId}: Catalogo magazzino e prodotti rivendita
@@ -38,6 +42,7 @@ rules_version = '2';
 //
 // 3. /appointments/{appId}
 //    - Collezione globale ridondante per sincronizzazioni cross-salone e query rapide clienti.
+//    - [Creazione: salone autorizzato o cliente per se stesso. Aggiornamento: salone full, cliente solo CANCELLED con campi critici immutabili]
 //
 // 4. /mail/{mailId}
 //    - Coda trigger estensioni Firebase per invio email transazionali (inviti staff, conferme).
@@ -80,6 +85,27 @@ service cloud.firestore {
       );
     }
 
+    // Verifica l'autorizzazione per la gestione salone di un appuntamento specifico
+    function isSalonAuthorizedForAppt(salonId, data) {
+      return isAuthenticated() && (
+        isSalonAuthorized(salonId) ||
+        data.get('salonRawId', '') == request.auth.uid ||
+        data.get('tenantId', '') == request.auth.uid
+      );
+    }
+
+    // Verifica l'autorizzazione salone per la collezione globale appointments
+    function isAppointmentSalonAuthorized(data) {
+      return isAuthenticated() && (
+        data.get('salonRawId', '') == request.auth.uid ||
+        data.get('tenantId', '') == request.auth.uid ||
+        data.get('salonId', '') == request.auth.uid ||
+        (data.get('tenantId', '') != '' && isSalonAuthorized(data.tenantId)) ||
+        (data.get('salonId', '') != '' && isSalonAuthorized(data.salonId)) ||
+        (data.get('salonRawId', '') != '' && isSalonAuthorized(data.salonRawId))
+      );
+    }
+
     // Verifica se l'utente chiamante è il cliente associato a una prenotazione
     function isAppointmentClient(data) {
       return isAuthenticated() && (
@@ -90,6 +116,46 @@ service cloud.firestore {
           data.get('customerEmail', '') == request.auth.token.email
         ))
       );
+    }
+
+    // Verifica che l'utente stia creando la prenotazione per se stesso e NON a nome di terzi
+    function isClientCreatingForSelf(data) {
+      return isAuthenticated() && (
+        data.get('customerId', '') == request.auth.uid ||
+        (data.get('customer', null) != null && data.customer.get('id', '') == request.auth.uid) ||
+        isAppointmentClient(data)
+      ) && (
+        // Se customerId è presente e non vuoto, deve coincidere con l'utente autenticato (anti-spoofing)
+        !('customerId' in data) || data.customerId == '' || data.customerId == request.auth.uid
+      ) && (
+        // Se customer.id è presente e non vuoto, deve coincidere con l'utente autenticato
+        data.get('customer', null) == null || !('id' in data.customer) || data.customer.id == '' || data.customer.id == request.auth.uid
+      );
+    }
+
+    // Verifica che lo stato iniziale di prenotazione creato dal cliente sia valido (esclusi COMPLETED e BLOCKED)
+    function isValidClientBookingStatus(data) {
+      return (
+        (!('status' in data) || data.status in ['confirmed', 'CONFIRMED', 'pending', 'PENDING']) &&
+        !(data.get('status', '') in ['completed', 'COMPLETED', 'blocked', 'BLOCKED'])
+      );
+    }
+
+    // Verifica che l'aggiornamento dell'appuntamento da parte del cliente sia valido:
+    // Il cliente può SOLO cancellare l'appuntamento (status in ['cancelled', 'CANCELLED'])
+    // e NON può manomettere i campi critici già stabiliti (servicePrice, price, salonId, tenantId, salonRawId, customerId, customer)
+    function isClientValidAppointmentUpdate(resourceData, requestResourceData) {
+      return isAppointmentClient(resourceData) &&
+        requestResourceData.status in ['cancelled', 'CANCELLED'] &&
+        !requestResourceData.diff(resourceData).affectedKeys().hasAny([
+          'servicePrice',
+          'price',
+          'salonId',
+          'tenantId',
+          'salonRawId',
+          'customerId',
+          'customer'
+        ]);
     }
 
     // ===============================================================
@@ -175,9 +241,21 @@ service cloud.firestore {
       }
 
       // 7. SCHEDULE LOCKS (Controllo atomico concorrenza e anti double-booking)
+      // Rafforzato: Scrittura consentita al salone autorizzato OPPURE all'utente che gestisce il lock per se stesso
       match /schedule_locks/{lockId} {
         allow read: if true;
-        allow write: if isAuthenticated();
+        allow create, update: if isAuthenticated() && (
+          isSalonAuthorized(salonId) ||
+          request.resource.data.get('userId', '') == request.auth.uid ||
+          request.resource.data.get('customerId', '') == request.auth.uid ||
+          lockId.matches('^' + request.auth.uid + '.*')
+        );
+        allow delete: if isAuthenticated() && (
+          isSalonAuthorized(salonId) ||
+          resource.data.get('userId', '') == request.auth.uid ||
+          resource.data.get('customerId', '') == request.auth.uid ||
+          lockId.matches('^' + request.auth.uid + '.*')
+        );
       }
 
       // 8. ANAGRAFICA CLIENTI DEL SALONE (SEC-01 & SEC-02)
@@ -198,16 +276,23 @@ service cloud.firestore {
 
       // 9. APPUNTAMENTI DEL SALONE
       match /appuntamenti/{appId} {
-        allow read: if isSalonAuthorized(salonId) ||
-          resource.data.get('salonRawId', '') == request.auth.uid ||
-          resource.data.get('tenantId', '') == request.auth.uid ||
+        // Lettura: Salone autorizzato o cliente proprietario della prenotazione
+        allow read: if isSalonAuthorizedForAppt(salonId, resource.data) ||
           isAppointmentClient(resource.data);
 
-        allow create: if isAuthenticated();
+        // Creazione: Salone autorizzato oppure cliente autenticato per se stesso con stato valido
+        allow create: if isSalonAuthorizedForAppt(salonId, request.resource.data) || (
+          isClientCreatingForSelf(request.resource.data) &&
+          isValidClientBookingStatus(request.resource.data)
+        );
 
-        allow update, delete: if isSalonAuthorized(salonId) ||
-          resource.data.get('salonRawId', '') == request.auth.uid ||
-          resource.data.get('tenantId', '') == request.auth.uid ||
+        // Aggiornamento: Salone autorizzato può aggiornare qualsiasi campo;
+        // Cliente può SOLO cancellare (status CANCELLED) senza alterare campi critici
+        allow update: if isSalonAuthorizedForAppt(salonId, resource.data) ||
+          isClientValidAppointmentUpdate(resource.data, request.resource.data);
+
+        // Eliminazione: Salone autorizzato o cliente associato
+        allow delete: if isSalonAuthorizedForAppt(salonId, resource.data) ||
           isAppointmentClient(resource.data);
       }
 
@@ -277,25 +362,24 @@ service cloud.firestore {
     // Collezione Globale Appuntamenti Ridondante (/appointments/{appId})
     // ===============================================================
     match /appointments/{appId} {
-      allow read: if isAuthenticated() && (
-        resource.data.get('salonRawId', '') == request.auth.uid ||
-        resource.data.get('tenantId', '') == request.auth.uid ||
-        resource.data.get('salonId', '') == request.auth.uid ||
-        isAppointmentClient(resource.data) ||
-        (resource.data.get('tenantId', '') != '' && isSalonAuthorized(resource.data.tenantId)) ||
-        (resource.data.get('salonId', '') != '' && isSalonAuthorized(resource.data.salonId))
+      // Lettura: Salone autorizzato associato o cliente proprietario
+      allow read: if isAppointmentSalonAuthorized(resource.data) ||
+        isAppointmentClient(resource.data);
+
+      // Creazione: Salone autorizzato oppure cliente autenticato per se stesso con stato valido
+      allow create: if isAppointmentSalonAuthorized(request.resource.data) || (
+        isClientCreatingForSelf(request.resource.data) &&
+        isValidClientBookingStatus(request.resource.data)
       );
 
-      allow create: if isAuthenticated();
+      // Aggiornamento: Salone autorizzato può aggiornare qualsiasi campo;
+      // Cliente può SOLO cancellare (status CANCELLED) senza alterare campi critici
+      allow update: if isAppointmentSalonAuthorized(resource.data) ||
+        isClientValidAppointmentUpdate(resource.data, request.resource.data);
 
-      allow update, delete: if isAuthenticated() && (
-        resource.data.get('salonRawId', '') == request.auth.uid ||
-        resource.data.get('tenantId', '') == request.auth.uid ||
-        resource.data.get('salonId', '') == request.auth.uid ||
-        isAppointmentClient(resource.data) ||
-        (resource.data.get('tenantId', '') != '' && isSalonAuthorized(resource.data.tenantId)) ||
-        (resource.data.get('salonId', '') != '' && isSalonAuthorized(resource.data.salonId))
-      );
+      // Eliminazione: Salone autorizzato o cliente associato
+      allow delete: if isAppointmentSalonAuthorized(resource.data) ||
+        isAppointmentClient(resource.data);
     }
 
     // ===============================================================

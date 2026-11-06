@@ -127,6 +127,19 @@ class AppointmentRepository extends ChangeNotifier {
   }
 
   Future<void> bookAppointment(Appointment appointment) async {
+    // 1. Validazione di sicurezza anti-collisione e double-booking
+    final hasConflict = _appointments.any((a) =>
+        a.salonId == appointment.salonId &&
+        a.status != AppointmentStatus.cancelled &&
+        a.id != appointment.id &&
+        (appointment.staffName == 'Qualsiasi Operatore Disponibile' || a.staffName == appointment.staffName) &&
+        appointment.startTime.isBefore(a.endTime) &&
+        appointment.endTime.isAfter(a.startTime));
+
+    if (hasConflict) {
+      throw Exception('Questo slot orario è già stato prenotato. Seleziona un altro orario.');
+    }
+
     _appointments.insert(0, appointment);
     await _saveToDisk();
     notifyListeners();

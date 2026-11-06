@@ -16,17 +16,17 @@ export async function POST(req: NextRequest) {
     const rawBody = await req.text();
     const signature = req.headers.get("stripe-signature");
 
-    if (webhookSecret && signature) {
-      event = stripe.webhooks.constructEvent(rawBody, signature, webhookSecret);
-    } else {
-      if (process.env.NODE_ENV === "production") {
-        console.error("[stripe/webhook] Rifiutato webhook non firmato in ambiente di produzione.");
-        return NextResponse.json({ error: "Firma webhook crittografica obbligatoria in produzione." }, { status: 400 });
-      }
-      // Solo in sviluppo se il secret del webhook non è ancora configurato, usa il json grezzo
-      event = JSON.parse(rawBody);
-      console.warn("[stripe/webhook] Webhook elaborato in modalità DEV senza verifica firma crittografica.");
+    if (!webhookSecret) {
+      console.error("[stripe/webhook] STRIPE_WEBHOOK_SECRET non configurato sul server.");
+      return NextResponse.json({ error: "Configurazione webhook mancante sul server." }, { status: 500 });
     }
+
+    if (!signature) {
+      console.warn("[stripe/webhook] Rifiutata chiamata webhook senza header stripe-signature.");
+      return NextResponse.json({ error: "Firma crittografica stripe-signature obbligatoria." }, { status: 400 });
+    }
+
+    event = stripe.webhooks.constructEvent(rawBody, signature, webhookSecret);
   } catch (err: any) {
     console.error(`[stripe/webhook] Errore verifica webhook: ${err.message}`);
     return NextResponse.json({ error: `Webhook Error: ${err.message}` }, { status: 400 });

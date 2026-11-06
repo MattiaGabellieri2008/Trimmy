@@ -651,20 +651,31 @@ class _BookingWizardScreenState extends State<BookingWizardScreen> {
       status: AppointmentStatus.confirmed,
     );
 
-    await context.read<AppointmentRepository>().bookAppointment(newAppt);
-    setState(() => _isBooking = false);
+    try {
+      await context.read<AppointmentRepository>().bookAppointment(newAppt);
+      setState(() => _isBooking = false);
 
-    if (!mounted) return;
+      if (!mounted) return;
 
-    // Mostra il Boarding Pass VIP di successo
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _SuccessBoardingPass(appointment: newAppt),
-    ).then((_) {
-      Navigator.pop(context);
-    });
+      // Mostra il Boarding Pass VIP di successo
+      showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (_) => _SuccessBoardingPass(appointment: newAppt),
+      ).then((_) {
+        Navigator.pop(context);
+      });
+    } catch (err) {
+      setState(() => _isBooking = false);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(err.toString().replaceAll('Exception: ', '')),
+          backgroundColor: AppColors.rose,
+        ),
+      );
+    }
   }
 }
 
