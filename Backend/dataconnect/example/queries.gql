@@ -2,7 +2,7 @@ query GetDailyAppointments(
   $tenantId: UUID!
   $todayStart: Timestamp!
   $todayEnd: Timestamp!
-) @auth(level: PUBLIC, insecureReason: "Prototyping before auth is configured") {
+) @auth(level: USER) {
   appointments(
     where: {
       tenantId: { eq: $tenantId }

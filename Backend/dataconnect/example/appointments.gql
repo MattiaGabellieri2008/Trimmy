@@ -1,7 +1,7 @@
-# Appuntamenti e risorse collegate (Staff, Servizi)
+# Appuntamenti e risorse collegate (Staff, Servizi) - Secured for Trimmy SaaS
 
-# 1. Query: Lista Servizi per Tenant
-query ListServices($tenantId: UUID!) @auth(level: PUBLIC, insecureReason: "Prototyping") {
+# 1. Query: Lista Servizi per Tenant (Pubblico per la consultazione del menu/listino)
+query ListServices($tenantId: UUID!) @auth(level: PUBLIC) {
   services(where: { tenantId: { eq: $tenantId } }, orderBy: [{ name: ASC }]) {
     id
     name
@@ -10,8 +10,8 @@ query ListServices($tenantId: UUID!) @auth(level: PUBLIC, insecureReason: "Proto
   }
 }
 
-# 2. Query: Lista Staff / Utenti per Tenant
-query ListStaff($tenantId: UUID!) @auth(level: PUBLIC, insecureReason: "Prototyping") {
+# 2. Query: Lista Staff / Utenti per Tenant (Riservato agli utenti registrati)
+query ListStaff($tenantId: UUID!) @auth(level: USER) {
   users(where: { tenantId: { eq: $tenantId } }, orderBy: [{ fullName: ASC }]) {
     id
     fullName
@@ -29,7 +29,7 @@ mutation CreateAppointment(
   $startTime: Timestamp!
   $endTime: Timestamp!
   $status: String = "CONFIRMED"
-) @auth(level: PUBLIC, insecureReason: "Prototyping") {
+) @auth(level: USER) {
   appointment_insert(data: {
     tenantId: $tenantId
     customerId: $customerId
@@ -45,7 +45,7 @@ mutation CreateAppointment(
 mutation UpdateAppointmentStatus(
   $id: UUID!
   $status: String!
-) @auth(level: PUBLIC, insecureReason: "Prototyping") {
+) @auth(level: USER) {
   appointment_update(
     id: $id
     data: {
@@ -57,18 +57,18 @@ mutation UpdateAppointmentStatus(
 # 5. Mutation: Cancella / Elimina Appuntamento
 mutation DeleteAppointment(
   $id: UUID!
-) @auth(level: PUBLIC, insecureReason: "Prototyping") {
+) @auth(level: USER) {
   appointment_delete(id: $id)
 }
 
-# 6. Mutation: Inserisci o Aggiorna Servizio Listino
+# 6. Mutation: Inserisci o Aggiorna Servizio Listino (Solo staff/salone autorizzato)
 mutation UpsertService(
   $id: UUID!
   $tenantId: UUID!
   $name: String!
   $durationMinutes: Int!
   $price: Float!
-) @auth(level: PUBLIC, insecureReason: "Prototyping") {
+) @auth(level: USER) {
   service_upsert(data: {
     id: $id
     tenantId: $tenantId
@@ -78,14 +78,14 @@ mutation UpsertService(
   })
 }
 
-# 7. Mutation: Inserisci o Aggiorna Collaboratore / Staff
+# 7. Mutation: Inserisci o Aggiorna Collaboratore / Staff (Solo salone autorizzato)
 mutation UpsertUser(
   $id: String!
   $tenantId: UUID!
   $role: String!
   $fullName: String!
   $phone: String
-) @auth(level: PUBLIC, insecureReason: "Prototyping") {
+) @auth(level: USER) {
   user_upsert(data: {
     id: $id
     tenantId: $tenantId

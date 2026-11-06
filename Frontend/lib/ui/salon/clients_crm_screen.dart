@@ -28,7 +28,6 @@ class _SalonClientsCrmScreenState extends State<SalonClientsCrmScreen> {
   ];
 
   List<Map<String, dynamic>> _realClients = [];
-  StreamSubscription<QuerySnapshot>? _usersSub;
   StreamSubscription<QuerySnapshot>? _salonClientsSub;
 
   @override
@@ -42,7 +41,6 @@ class _SalonClientsCrmScreenState extends State<SalonClientsCrmScreen> {
   @override
   void dispose() {
     _searchCtrl.dispose();
-    _usersSub?.cancel();
     _salonClientsSub?.cancel();
     super.dispose();
   }
@@ -54,19 +52,7 @@ class _SalonClientsCrmScreenState extends State<SalonClientsCrmScreen> {
     setState(() => _isLoading = true);
 
     try {
-      // 1. Ascolta utenti clienti da Firestore /users
-      _usersSub = FirebaseFirestore.instance
-          .collection('users')
-          .where('role', isEqualTo: 'cliente')
-          .snapshots()
-          .listen((snapshot) {
-        _mergeClientDocs(snapshot.docs);
-      }, onError: (e) {
-        debugPrint('Errore sync utenti clienti: $e');
-        setState(() => _isLoading = false);
-      });
-
-      // 2. Ascolta clienti specifici del salone in /saloni/{salonId}/clienti
+      // Ascolta esclusivamente i clienti isolati di questo salone in /saloni/{salonId}/clienti (Protezione GDPR cross-tenant)
       _salonClientsSub = FirebaseFirestore.instance
           .collection('saloni')
           .doc(salonId)

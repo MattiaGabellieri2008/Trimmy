@@ -15,19 +15,14 @@ async function handleCron(req: NextRequest) {
     const authHeader = req.headers.get("authorization");
     const cronSecret = process.env.CRON_SECRET;
 
-    const url = new URL(req.url);
-    const queryKey = url.searchParams.get("key");
-
-    // Verifica dell'autorizzazione di sicurezza CRON_SECRET
-    if (cronSecret) {
-      const isBearerValid = authHeader === `Bearer ${cronSecret}`;
-      const isQueryValid = queryKey === cronSecret;
-
-      if (!isBearerValid && !isQueryValid) {
-        return NextResponse.json({ error: "Accesso non autorizzato. Fornisci un CRON_SECRET valido." }, { status: 401 });
-      }
-    } else if (process.env.NODE_ENV === "production") {
+    // Verifica dell'autorizzazione di sicurezza CRON_SECRET (Obbligatorio via header Authorization: Bearer per prevenire leak nei log URL)
+    if (!cronSecret) {
       return NextResponse.json({ error: "CRON_SECRET non configurato sul server. Accesso bloccato per sicurezza." }, { status: 500 });
+    }
+
+    const isBearerValid = authHeader === `Bearer ${cronSecret}`;
+    if (!isBearerValid) {
+      return NextResponse.json({ error: "Accesso non autorizzato. Fornisci un token CRON_SECRET valido tramite header Authorization: Bearer." }, { status: 401 });
     }
 
     const now = new Date();

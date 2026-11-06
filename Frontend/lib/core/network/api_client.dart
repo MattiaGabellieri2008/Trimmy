@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class ApiException implements Exception {
   final int statusCode;
@@ -66,11 +67,27 @@ class ApiClient {
 
   Future<void> clearAuthToken() => setAuthToken(null);
 
-  Map<String, String> _buildHeaders() {
+  Future<Map<String, String>> _buildHeaders() async {
     final headers = <String, String>{
       'Content-Type': 'application/json',
       'Accept': 'application/json',
     };
+
+    // 1. Prova prima a recuperare il vero Firebase Auth ID Token valido in tempo reale
+    try {
+      final fbUser = FirebaseAuth.instance.currentUser;
+      if (fbUser != null) {
+        final idToken = await fbUser.getIdToken();
+        if (idToken != null && idToken.isNotEmpty) {
+          headers['Authorization'] = 'Bearer $idToken';
+          return headers;
+        }
+      }
+    } catch (e) {
+      debugPrint('Nota recupero Firebase ID Token: $e');
+    }
+
+    // 2. Fallback su token memorizzato se presente
     if (_authToken != null && _authToken!.isNotEmpty) {
       headers['Authorization'] = 'Bearer $_authToken';
     }
@@ -91,7 +108,8 @@ class ApiClient {
   Future<dynamic> get(String path, {Map<String, dynamic>? queryParams}) async {
     try {
       final uri = _buildUri(path, queryParams);
-      final res = await http.get(uri, headers: _buildHeaders()).timeout(_defaultTimeout);
+      final headers = await _buildHeaders();
+      final res = await http.get(uri, headers: headers).timeout(_defaultTimeout);
       return _processResponse(res);
     } on SocketException catch (e) {
       throw ApiException(statusCode: 0, message: 'Nessuna connessione a Internet: ${e.message}');
@@ -104,8 +122,9 @@ class ApiClient {
   Future<dynamic> post(String path, {dynamic body}) async {
     try {
       final uri = _buildUri(path);
+      final headers = await _buildHeaders();
       final encodedBody = body != null ? jsonEncode(body) : null;
-      final res = await http.post(uri, headers: _buildHeaders(), body: encodedBody).timeout(_defaultTimeout);
+      final res = await http.post(uri, headers: headers, body: encodedBody).timeout(_defaultTimeout);
       return _processResponse(res);
     } on SocketException catch (e) {
       throw ApiException(statusCode: 0, message: 'Nessuna connessione a Internet: ${e.message}');
@@ -118,8 +137,9 @@ class ApiClient {
   Future<dynamic> put(String path, {dynamic body}) async {
     try {
       final uri = _buildUri(path);
+      final headers = await _buildHeaders();
       final encodedBody = body != null ? jsonEncode(body) : null;
-      final res = await http.put(uri, headers: _buildHeaders(), body: encodedBody).timeout(_defaultTimeout);
+      final res = await http.put(uri, headers: headers, body: encodedBody).timeout(_defaultTimeout);
       return _processResponse(res);
     } on SocketException catch (e) {
       throw ApiException(statusCode: 0, message: 'Nessuna connessione a Internet: ${e.message}');
@@ -132,7 +152,8 @@ class ApiClient {
   Future<dynamic> delete(String path) async {
     try {
       final uri = _buildUri(path);
-      final res = await http.delete(uri, headers: _buildHeaders()).timeout(_defaultTimeout);
+      final headers = await _buildHeaders();
+      final res = await http.delete(uri, headers: headers).timeout(_defaultTimeout);
       return _processResponse(res);
     } on SocketException catch (e) {
       throw ApiException(statusCode: 0, message: 'Nessuna connessione a Internet: ${e.message}');
@@ -170,4 +191,3 @@ class ApiClient {
     );
   }
 }
-

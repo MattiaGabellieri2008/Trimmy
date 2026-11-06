@@ -1,4 +1,6 @@
-mutation InserisciDatiDiProva @auth(level: PUBLIC, insecureReason: "Prototyping") {
+# Mutazioni amministrative e configurazioni tenant (Secured for Trimmy SaaS)
+
+mutation InserisciDatiDiProva @auth(level: NO_ACCESS) {
   # 1. Crea il Salone
   tenant_upsert(data: {
     id: "550e8400-e29b-41d4-a716-446655440000",
@@ -45,7 +47,7 @@ mutation InserisciDatiDiProva @auth(level: PUBLIC, insecureReason: "Prototyping"
   })
 }
 
-mutation UpsertTenant($id: UUID!, $name: String!, $planType: String!, $businessCategory: String!) @auth(level: PUBLIC, insecureReason: "Prototyping") {
+mutation UpsertTenant($id: UUID!, $name: String!, $planType: String!, $businessCategory: String!) @auth(level: USER) {
   tenant_upsert(data: {
     id: $id,
     name: $name,
@@ -55,19 +57,18 @@ mutation UpsertTenant($id: UUID!, $name: String!, $planType: String!, $businessC
   })
 }
 
-mutation UpdateTenantOnboarding($id: UUID!, $businessCategory: String!) @auth(level: PUBLIC, insecureReason: "Prototyping") {
+mutation UpdateTenantOnboarding($id: UUID!, $businessCategory: String!) @auth(level: USER) {
   tenant_update(id: $id, data: { businessCategory: $businessCategory, onboardingCompleted: true })
 }
 
-
-mutation DeleteTenant($id: UUID!) @auth(level: PUBLIC, insecureReason: "Prototyping") {
+mutation DeleteTenant($id: UUID!) @auth(level: USER) {
   tenant_delete(id: $id)
 }
 
-mutation DeleteUser($id: String!) @auth(level: PUBLIC, insecureReason: "Prototyping") {
+mutation DeleteUser($id: String!) @auth(level: USER) {
   user_delete(id: $id)
 }
 
-mutation DeleteService($id: UUID!) @auth(level: PUBLIC, insecureReason: "Prototyping") {
+mutation DeleteService($id: UUID!) @auth(level: USER) {
   service_delete(id: $id)
 }

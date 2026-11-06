@@ -50,13 +50,13 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     // Filtra appuntamenti
     final filteredAppts = apptRepo.allAppointments.where((a) {
       if (_selectedPeriod == 'Oggi') {
-        return a.date.year == now.year && a.date.month == now.month && a.date.day == now.day;
+        return a.startTime.year == now.year && a.startTime.month == now.month && a.startTime.day == now.day;
       } else if (_selectedPeriod == '7 Giorni') {
-        return a.date.isAfter(now.subtract(const Duration(days: 7)));
+        return a.startTime.isAfter(now.subtract(const Duration(days: 7)));
       } else if (_selectedPeriod == '30 Giorni') {
-        return a.date.isAfter(now.subtract(const Duration(days: 30)));
+        return a.startTime.isAfter(now.subtract(const Duration(days: 30)));
       } else {
-        return a.date.year == now.year;
+        return a.startTime.year == now.year;
       }
     }).toList();
 

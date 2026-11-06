@@ -41,6 +41,10 @@ class AuthRepository extends ChangeNotifier {
         if (profile != null) {
           _currentUser = profile;
           await _saveSessionToDisk(_currentUser);
+          try {
+            final idToken = await fbUser.getIdToken();
+            await ApiClient().setAuthToken(idToken);
+          } catch (_) {}
           _isLoading = false;
           notifyListeners();
           return;
@@ -107,31 +111,74 @@ class AuthRepository extends ChangeNotifier {
           email: email.trim(),
           password: password,
         );
-      } catch (fbErr) {
-        debugPrint('Firebase Auth fallito o non configurato offline: $fbErr');
+      } on FirebaseAuthException catch (fbErr) {
+        debugPrint('FirebaseAuthException durante il login: ${fbErr.code} - ${fbErr.message}');
+        String userFriendlyMsg = 'Errore di autenticazione.';
+        switch (fbErr.code) {
+          case 'user-not-found':
+            userFriendlyMsg = 'Nessun account registrato con questo indirizzo email.';
+            break;
+          case 'wrong-password':
+          case 'invalid-credential':
+            userFriendlyMsg = 'Password errata o credenziali non corrette. Riprova.';
+            break;
+          case 'invalid-email':
+            userFriendlyMsg = 'Il formato dell\'indirizzo email non è valido.';
+            break;
+          case 'user-disabled':
+            userFriendlyMsg = 'Questo account è stato disabilitato per motivi di sicurezza.';
+            break;
+          case 'too-many-requests':
+            userFriendlyMsg = 'Troppi tentativi falliti consecutivi. Attendi qualche minuto prima di riprovare.';
+            break;
+          case 'network-request-failed':
+            // Se la rete è offline, controlla se sul dispositivo è salvata una sessione valida di questo utente
+            final prefs = await SharedPreferences.getInstance();
+            final rawJson = prefs.getString(_sessionStorageKey);
+            if (rawJson != null && rawJson.isNotEmpty) {
+              final decoded = jsonDecode(rawJson) as Map<String, dynamic>;
+              if ((decoded['email'] as String?)?.toLowerCase() == email.trim().toLowerCase()) {
+                _currentUser = AppUser.fromJson(decoded);
+                _isLoading = false;
+                notifyListeners();
+                return true;
+              }
+            }
+            userFriendlyMsg = 'Nessuna connessione a Internet disponibile. Riprova con la connessione attiva.';
+            break;
+          default:
+            userFriendlyMsg = fbErr.message ?? 'Impossibile accedere con queste credenziali.';
+        }
+        _errorMessage = userFriendlyMsg;
+        _isLoading = false;
+        notifyListeners();
+        return false;
+      } catch (err) {
+        _errorMessage = 'Errore durante il tentativo di accesso: $err';
+        _isLoading = false;
+        notifyListeners();
+        return false;
       }
 
-      final uid = cred?.user?.uid ?? 'user-${email.hashCode.abs()}';
+      if (cred.user == null) {
+        _errorMessage = 'Credenziali di accesso non valide.';
+        _isLoading = false;
+        notifyListeners();
+        return false;
+      }
 
-      // Prova a recuperare il profilo da Firestore
+      final uid = cred.user!.uid;
+
+      // Recupera il profilo reale da Firestore
       AppUser? profile = await _fetchFirestoreProfile(uid, email);
 
       if (profile == null) {
-        // Se non esiste ancora su Firestore, deduce il ruolo in base al dominio/email
-        final isSalon = email.toLowerCase().contains('salone') ||
-            email.toLowerCase().contains('atelier') ||
-            email.toLowerCase().contains('barber');
-
         profile = AppUser(
           id: uid,
-          email: email,
-          displayName: cred?.user?.displayName ?? (isSalon ? 'Titolare Salone' : 'Cliente Trimmy'),
-          role: isSalon ? UserRole.salon : UserRole.client,
-          salonId: isSalon ? 'salon-1' : null,
-          salonName: isSalon ? 'Atelier Bellezza Duomo' : null,
+          email: email.trim(),
+          displayName: cred.user?.displayName ?? 'Utente Trimmy',
+          role: UserRole.client,
         );
-
-        // Salva su Firestore per la prossima volta
         try {
           await FirebaseFirestore.instance.collection('users').doc(uid).set(profile.toJson(), SetOptions(merge: true));
         } catch (_) {}
@@ -139,7 +186,11 @@ class AuthRepository extends ChangeNotifier {
 
       _currentUser = profile;
       await _saveSessionToDisk(_currentUser);
-      await ApiClient().setAuthToken('token-${_currentUser!.id}');
+      
+      try {
+        final idToken = await cred.user?.getIdToken();
+        await ApiClient().setAuthToken(idToken);
+      } catch (_) {}
 
       _isLoading = false;
       notifyListeners();
@@ -226,7 +277,10 @@ class AuthRepository extends ChangeNotifier {
 
       _currentUser = newUser;
       await _saveSessionToDisk(_currentUser);
-      await ApiClient().setAuthToken('token-${_currentUser!.id}');
+      try {
+        final idToken = await cred?.user?.getIdToken();
+        await ApiClient().setAuthToken(idToken);
+      } catch (_) {}
 
       _isLoading = false;
       notifyListeners();
@@ -337,7 +391,10 @@ class AuthRepository extends ChangeNotifier {
 
       _currentUser = profile;
       await _saveSessionToDisk(_currentUser);
-      await ApiClient().setAuthToken('token-${_currentUser!.id}');
+      try {
+        final idToken = await fbUser.getIdToken();
+        await ApiClient().setAuthToken(idToken);
+      } catch (_) {}
 
       _isLoading = false;
       notifyListeners();

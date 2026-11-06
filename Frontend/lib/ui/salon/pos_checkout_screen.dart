@@ -12,6 +12,7 @@ import '../../data/repositories/fidelity_repository.dart';
 import '../../data/repositories/inventory_repository.dart';
 import '../../data/repositories/checkout_repository.dart';
 import '../../data/repositories/auth_repository.dart';
+import '../../data/repositories/appointment_repository.dart';
 import 'daily_cash_closing_modal.dart';
 
 class PosCheckoutScreen extends StatefulWidget {
@@ -704,11 +705,14 @@ class _PosCheckoutScreenState extends State<PosCheckoutScreen> {
   // --------------------------------------------------------------------------
 
   void _showClientSelectionSheet() {
+    final authRepo = context.read<AuthRepository>();
+    final salonId = authRepo.currentUser?.salonId ?? authRepo.currentUser?.uid ?? 'salone_default';
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (ctx) => _ClientSelectorSheet(
+        salonId: salonId,
         currentClientId: _customerId,
         onClientSelected: (name, phone, id, points, tier) {
           setState(() {
@@ -1513,10 +1517,12 @@ class _AddItemModalState extends State<_AddItemModal> with SingleTickerProviderS
 // ----------------------------------------------------------------------------
 
 class _ClientSelectorSheet extends StatefulWidget {
+  final String salonId;
   final String? currentClientId;
   final Function(String name, String? phone, String? id, int points, String tier) onClientSelected;
 
   const _ClientSelectorSheet({
+    required this.salonId,
     required this.currentClientId,
     required this.onClientSelected,
   });
@@ -1539,23 +1545,48 @@ class _ClientSelectorSheetState extends State<_ClientSelectorSheet> {
 
   Future<void> _fetchClients() async {
     try {
+      // Interroga esclusivamente la sotto-collezione isolata /saloni/{salonId}/clienti (Privacy GDPR)
       final snap = await FirebaseFirestore.instance
-          .collection('users')
-          .where('role', isEqualTo: 'cliente')
-          .limit(30)
+          .collection('saloni')
+          .doc(widget.salonId)
+          .collection('clienti')
+          .limit(50)
           .get();
+
+      List<Map<String, dynamic>> loaded = snap.docs.map((d) {
+        final data = d.data();
+        data['uid'] = d.id;
+        return data;
+      }).toList();
+
+      // Raccoglie clienti unici dagli appuntamenti registrati in questo salone
+      if (mounted) {
+        final apptRepo = context.read<AppointmentRepository>();
+        final salonAppts = apptRepo.appointments.where((a) => a.salonId == widget.salonId).toList();
+        for (final appt in salonAppts) {
+          final exists = loaded.any((c) =>
+              c['uid'] == appt.customerId ||
+              (c['displayName'] ?? c['name'] ?? '').toString().toLowerCase() == appt.customerName.toLowerCase());
+          if (!exists && appt.customerName.isNotEmpty) {
+            loaded.add({
+              'uid': appt.customerId.isNotEmpty ? appt.customerId : 'c-',
+              'displayName': appt.customerName,
+              'phone': appt.customerPhone,
+              'fidelityPoints': 50,
+              'vipTier': 'Cliente Attivo',
+            });
+          }
+        }
+      }
 
       if (mounted) {
         setState(() {
-          _clients = snap.docs.map((d) {
-            final data = d.data();
-            data['uid'] = d.id;
-            return data;
-          }).toList();
+          _clients = loaded;
           _isLoading = false;
         });
       }
-    } catch (_) {
+    } catch (e) {
+      debugPrint('Errore caricamento clienti cassa: ');
       if (mounted) setState(() => _isLoading = false);
     }
   }

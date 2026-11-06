@@ -1,6 +1,6 @@
-# Queries and mutations for managing customers
+# Queries and mutations for managing customers (Secured for Trimmy SaaS)
 
-query ListCustomers($tenantId: UUID!) @auth(level: PUBLIC, insecureReason: "Prototyping") {
+query ListCustomers($tenantId: UUID!) @auth(level: USER) {
   customers(where: { tenantId: { eq: $tenantId } }, orderBy: [{ lastName: ASC }]) {
     id
     firstName
@@ -12,7 +12,7 @@ query ListCustomers($tenantId: UUID!) @auth(level: PUBLIC, insecureReason: "Prot
   }
 }
 
-query GetCustomerDetails($customerId: UUID!) @auth(level: PUBLIC, insecureReason: "Prototyping") {
+query GetCustomerDetails($customerId: UUID!) @auth(level: USER) {
   customer(id: $customerId) {
     id
     firstName
@@ -44,7 +44,7 @@ mutation CreateCustomer(
   $email: String
   $birthday: String
   $technicalNotes: String
-) @auth(level: PUBLIC, insecureReason: "Prototyping") {
+) @auth(level: USER) {
   customer_insert(data: {
     tenantId: $tenantId
     firstName: $firstName
@@ -64,7 +64,7 @@ mutation UpdateCustomer(
   $email: String
   $birthday: String
   $technicalNotes: String
-) @auth(level: PUBLIC, insecureReason: "Prototyping") {
+) @auth(level: USER) {
   customer_update(
     id: $id
     data: {
@@ -78,7 +78,6 @@ mutation UpdateCustomer(
   )
 }
 
-
-mutation DeleteCustomer($id: UUID!) @auth(level: PUBLIC, insecureReason: "Prototyping") {
+mutation DeleteCustomer($id: UUID!) @auth(level: USER) {
   customer_delete(id: $id)
 }
