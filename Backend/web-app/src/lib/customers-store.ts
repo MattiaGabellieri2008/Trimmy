@@ -3,6 +3,7 @@ import { doc, getDoc, setDoc, collection, getDocs, query, deleteDoc } from "fire
 import { listCustomers, createCustomer, ListCustomersData } from "../dataconnect-generated";
 import { getSalonTenantId } from "./tenant-helper";
 import { enqueueOutboxMutation } from "./outbox-sync";
+import { logSecurityAuditEvent } from "./audit-logger";
 
 export interface CustomerItem {
   id: string;
@@ -407,6 +408,19 @@ export async function saveSalonCustomer(
     }
   }
 
+  // 5. Tracciamento Audit Immutabile per Note Tecniche e Modifiche PII (GDPR Art. 9 e Art. 30)
+  if (customerData.technicalNotes) {
+    logSecurityAuditEvent({
+      salonId: tid,
+      action: "UPDATE_TECHNICAL_NOTES",
+      targetCustomerId: customerId,
+      details: {
+        customerName: `${customerItem.firstName} ${customerItem.lastName}`,
+        hasMergedNotes: Boolean(match?.technicalNotes),
+      },
+    });
+  }
+
   return customerItem;
 }
 
@@ -452,6 +466,16 @@ export async function deleteSalonCustomer(
   if (typeof window !== "undefined") {
     window.dispatchEvent(new CustomEvent("trimmy-data-updated"));
   }
+
+  // 3. Tracciamento Audit Immutabile Eliminazione Cliente (GDPR Art. 17 & Art. 30)
+  logSecurityAuditEvent({
+    salonId: tid,
+    action: "DELETE_CUSTOMER",
+    targetCustomerId: customerId,
+    details: {
+      deletedAt: delIso,
+    },
+  });
 
   return true;
 }

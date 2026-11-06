@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getStripe, isStripeConfigured, getAppBaseUrl } from "@/lib/stripe";
 import { adminAuth, adminDb } from "@/lib/firebase-admin";
+import { checkDistributedRateLimit } from "@/lib/distributed-rate-limiter";
 
 export async function POST(req: NextRequest) {
   try {
@@ -25,6 +26,27 @@ export async function POST(req: NextRequest) {
 
     if (!userId) {
       return NextResponse.json({ error: "Accesso non autorizzato. Token di autenticazione Bearer valido obbligatorio." }, { status: 401 });
+    }
+
+    // Rate Limiting anti-abuso su sessioni Customer Portal (max 10 richieste al minuto per utente)
+    const rateCheck = await checkDistributedRateLimit(userId, {
+      scope: "stripe_portal",
+      maxRequests: 10,
+      windowMs: 60 * 1000,
+    });
+
+    if (!rateCheck.allowed) {
+      return NextResponse.json(
+        { error: `Troppe richieste al portale di fatturazione. Attendi ${rateCheck.resetSeconds} secondi.` },
+        {
+          status: 429,
+          headers: {
+            "Retry-After": rateCheck.resetSeconds.toString(),
+            "X-RateLimit-Limit": rateCheck.limit.toString(),
+            "X-RateLimit-Remaining": rateCheck.remaining.toString(),
+          },
+        }
+      );
     }
 
     const stripe = getStripe();

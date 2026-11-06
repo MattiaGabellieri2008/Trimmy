@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getStripe, isStripeConfigured, SAAS_PLANS, getAppBaseUrl } from "@/lib/stripe";
 import { adminAuth, adminDb } from "@/lib/firebase-admin";
+import { checkDistributedRateLimit } from "@/lib/distributed-rate-limiter";
 
 export async function POST(req: NextRequest) {
   try {
@@ -34,6 +35,27 @@ export async function POST(req: NextRequest) {
 
     if (!userId) {
       return NextResponse.json({ error: "Utente non autenticato. Token Bearer valido obbligatorio." }, { status: 401 });
+    }
+
+    // Rate Limiting anti-abuso su sessioni Stripe Checkout (max 10 richieste al minuto per utente)
+    const rateCheck = await checkDistributedRateLimit(userId, {
+      scope: "stripe_checkout",
+      maxRequests: 10,
+      windowMs: 60 * 1000,
+    });
+
+    if (!rateCheck.allowed) {
+      return NextResponse.json(
+        { error: `Troppi tentativi di creazione checkout. Attendi ${rateCheck.resetSeconds} secondi prima di riprovare.` },
+        {
+          status: 429,
+          headers: {
+            "Retry-After": rateCheck.resetSeconds.toString(),
+            "X-RateLimit-Limit": rateCheck.limit.toString(),
+            "X-RateLimit-Remaining": rateCheck.remaining.toString(),
+          },
+        }
+      );
     }
 
     const planConfig = SAAS_PLANS[planType as "MEDIUM" | "PRO"];
