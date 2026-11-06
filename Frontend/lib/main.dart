@@ -12,6 +12,7 @@ import 'data/repositories/salon_repository.dart';
 import 'data/repositories/appointment_repository.dart';
 import 'data/repositories/fidelity_repository.dart';
 import 'data/repositories/inventory_repository.dart';
+import 'data/repositories/checkout_repository.dart';
 import 'ui/auth/login_screen.dart';
 import 'ui/client/client_main_screen.dart';
 import 'ui/salon/salon_main_screen.dart';
@@ -42,6 +43,7 @@ void main() async {
         ChangeNotifierProvider(create: (_) => FidelityRepository()),
         ChangeNotifierProvider(create: (_) => LocationService()),
         ChangeNotifierProvider(create: (_) => InventoryRepository()),
+        ChangeNotifierProvider(create: (_) => CheckoutRepository()),
       ],
       child: const TrimmyApp(),
     ),

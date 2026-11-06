@@ -12,7 +12,50 @@ class SalonRepository extends ChangeNotifier {
   StreamSubscription<QuerySnapshot>? _servicesSub;
   String? _currentServicesSalonId;
 
-  List<SalonService> _services = [];
+  static const List<SalonService> defaultBaseServices = [
+    SalonService(
+      id: 'srv-taglio-d',
+      name: 'Taglio Sartoriale & Piega Luxury',
+      category: 'Taglio & Piega',
+      price: 45.0,
+      durationMinutes: 45,
+      description: 'Consulenza morfologica, shampoo con massaggio relax, taglio sartoriale e piega gloss.',
+    ),
+    SalonService(
+      id: 'srv-piega',
+      name: 'Piega & Styling Glamour',
+      category: 'Taglio & Piega',
+      price: 25.0,
+      durationMinutes: 30,
+      description: 'Piega a phon con prodotti termo-protettivi e styling a onde o liscio specchio.',
+    ),
+    SalonService(
+      id: 'srv-balayage',
+      name: 'Balayage Sfumato & Gloss',
+      category: 'Colore',
+      price: 95.0,
+      durationMinutes: 90,
+      description: 'Schiariture a mano libera con tonalizzazione lucida illuminante senza ammoniaca.',
+    ),
+    SalonService(
+      id: 'srv-barba',
+      name: 'Rasatura Tradizionale & Panno Caldo',
+      category: 'Barba',
+      price: 22.0,
+      durationMinutes: 25,
+      description: 'Rituale rasatura con panni caldi all\'eucalipto, lozione dopobarba e balsamo nutritivo.',
+    ),
+    SalonService(
+      id: 'srv-trattamento',
+      name: 'Trattamento Ricostruzione Cheratina',
+      category: 'Trattamenti',
+      price: 55.0,
+      durationMinutes: 40,
+      description: 'Ristrutturazione molecolare profonda dello stelo capillare.',
+    ),
+  ];
+
+  List<SalonService> _services = List.from(defaultBaseServices);
 
   List<Salon> get salons => _salons;
   List<SalonService> get services => _services;
