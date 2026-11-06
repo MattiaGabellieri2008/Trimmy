@@ -213,9 +213,9 @@ export async function inviteStaffMemberWithFirebase(
     if (typeof window !== "undefined") {
       window.localStorage.setItem("emailForSignIn", cleanEmail);
     }
-  } catch (authErr: any) {
+  } catch (authErr) {
     console.warn("Avviso invio Firebase Auth email link:", authErr);
-    emailErrorMessage = authErr.message || "Errore invio email Firebase";
+    emailErrorMessage = (authErr as Error).message || "Errore invio email Firebase";
   }
 
   // 4. Salva il record di invito in Cloud Firestore (/saloni/{tenantId}/inviti)

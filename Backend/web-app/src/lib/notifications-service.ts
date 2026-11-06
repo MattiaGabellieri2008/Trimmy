@@ -161,7 +161,7 @@ export async function sendNotification(
     }
 
     return resData;
-  } catch (err: any) {
+  } catch (err) {
     console.warn("[FCM] Nota invio notifica:", err);
     // Fallback salvataggio locale del tentativo
     const fallbackItem: NotificationLogItem = {
