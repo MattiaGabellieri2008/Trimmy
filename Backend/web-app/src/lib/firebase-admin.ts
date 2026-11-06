@@ -34,7 +34,7 @@ function getAdminApp(): App {
   // Fallback: Application Default Credentials (ADC)
   // Funziona automaticamente su Cloud Run, App Hosting, e localmente con `gcloud auth application-default login`
   return initializeApp({
-    projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || process.env.FIREBASE_PROJECT_ID || "trimmy-saloni",
+    projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || process.env.FIREBASE_PROJECT_ID || "gestionale-saloni",
   });
 }
 
