@@ -312,6 +312,24 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
                 ),
               ),
             ),
+
+            const SizedBox(height: 16),
+
+            // Pulsante Diritto all'Oblio / Eliminazione Account GDPR (Art. 17)
+            Center(
+              child: TextButton.icon(
+                onPressed: () => _confirmDeleteAccount(context, authRepo),
+                icon: Icon(Icons.delete_forever_outlined, size: 16, color: subColor),
+                label: Text(
+                  'Elimina Account e Dati Personali (GDPR)',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: subColor,
+                    decoration: TextDecoration.underline,
+                  ),
+                ),
+              ),
+            ),
           ],
         ),
       ),
@@ -376,6 +394,50 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             ),
             child: const Text('Esci', style: TextStyle(color: AppColors.white)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _confirmDeleteAccount(BuildContext context, AuthRepository authRepo) {
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Colors.red, size: 24),
+            SizedBox(width: 8),
+            Text('Elimina Account', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+          ],
+        ),
+        content: const Text(
+          'Questa azione è definitiva e irreversibile (GDPR Art. 17 - Diritto all\'Oblio).\n\n'
+          'Tutti i tuoi dati personali, il profilo, lo storico degli appuntamenti e i punti fedeltà VIP verranno eliminati permanentemente dai nostri server Cloud.',
+          style: TextStyle(fontSize: 13, height: 1.4),
+        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Annulla', style: TextStyle(color: AppColors.zinc500)),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(dialogContext);
+              final success = await authRepo.deleteAccount();
+              if (!success && context.mounted) {
+                final errMsg = authRepo.errorMessage ?? 'Impossibile eliminare l\'account.';
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text(errMsg), backgroundColor: Colors.red),
+                );
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red.shade700,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            child: const Text('Elimina Definitivamente', style: TextStyle(color: AppColors.white, fontWeight: FontWeight.bold)),
           ),
         ],
       ),

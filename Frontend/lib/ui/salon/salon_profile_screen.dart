@@ -510,6 +510,24 @@ class _SalonProfileScreenState extends State<SalonProfileScreen> {
                 ),
               ),
             ),
+
+            const SizedBox(height: 16),
+
+            // Pulsante Eliminazione Account GDPR (Art. 17)
+            Center(
+              child: TextButton.icon(
+                onPressed: () => _confirmDeleteAccount(context, authRepo),
+                icon: Icon(Icons.delete_forever_outlined, size: 16, color: isDark ? Colors.white54 : AppColors.zinc500),
+                label: Text(
+                  'Elimina Account e Dati Personali (GDPR)',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: isDark ? Colors.white54 : AppColors.zinc500,
+                    decoration: TextDecoration.underline,
+                  ),
+                ),
+              ),
+            ),
           ],
         ),
       ),
@@ -801,6 +819,49 @@ class _SalonProfileScreenState extends State<SalonProfileScreen> {
               authRepo.signOut();
             },
             child: const Text('Esci', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _confirmDeleteAccount(BuildContext context, AuthRepository authRepo) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Colors.red, size: 24),
+            SizedBox(width: 8),
+            Text('Elimina Salone e Account', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+          ],
+        ),
+        content: const Text(
+          'Questa operazione è permanente e non reversibile (GDPR Art. 17).\n\n'
+          'Verranno eliminati definitivamente l\'account di gestione, i dati del profilo e l\'anagrafica del salone dai server Cloud.',
+          style: TextStyle(fontSize: 13, height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Annulla', style: TextStyle(color: AppColors.zinc600)),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              final success = await authRepo.deleteAccount();
+              if (!success && context.mounted) {
+                final errMsg = authRepo.errorMessage ?? 'Impossibile eliminare l\'account.';
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text(errMsg), backgroundColor: Colors.red),
+                );
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red.shade700,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            child: const Text('Elimina Definitivamente', style: TextStyle(color: AppColors.white, fontWeight: FontWeight.bold)),
           ),
         ],
       ),

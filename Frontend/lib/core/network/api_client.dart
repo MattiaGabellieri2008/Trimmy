@@ -2,8 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../storage/secure_storage_service.dart';
 
 class ApiException implements Exception {
   final int statusCode;
@@ -40,28 +40,26 @@ class ApiClient {
     _baseUrl = url.endsWith('/') ? url.substring(0, url.length - 1) : url;
   }
 
-  /// Inizializza il client caricando l'eventuale token salvato su disco
+  /// Inizializza il client caricando l'eventuale token salvato su storage sicuro (Keystore/Keychain)
   Future<void> init() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      _authToken = prefs.getString(_tokenStorageKey);
+      _authToken = await SecureStorageService().readSecure(_tokenStorageKey);
     } catch (e) {
-      debugPrint('Errore lettura token ApiClient: $e');
+      debugPrint('Errore lettura protetta token ApiClient: $e');
     }
   }
 
-  /// Salva o rimuove il Bearer token di autenticazione
+  /// Salva o rimuove il Bearer token di autenticazione su storage hardware protetto
   Future<void> setAuthToken(String? token) async {
     _authToken = token;
     try {
-      final prefs = await SharedPreferences.getInstance();
       if (token != null && token.isNotEmpty) {
-        await prefs.setString(_tokenStorageKey, token);
+        await SecureStorageService().writeSecure(_tokenStorageKey, token);
       } else {
-        await prefs.remove(_tokenStorageKey);
+        await SecureStorageService().deleteSecure(_tokenStorageKey);
       }
     } catch (e) {
-      debugPrint('Errore scrittura token ApiClient: $e');
+      debugPrint('Errore scrittura protetta token ApiClient: $e');
     }
   }
 

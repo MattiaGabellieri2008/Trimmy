@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/network/api_client.dart';
+import '../../core/storage/secure_storage_service.dart';
 import '../models/user_model.dart';
 
 class AuthRepository extends ChangeNotifier {
@@ -51,9 +52,8 @@ class AuthRepository extends ChangeNotifier {
         }
       }
 
-      // 2. Controlla la sessione salvata localmente su disco
-      final prefs = await SharedPreferences.getInstance();
-      final rawJson = prefs.getString(_sessionStorageKey);
+      // 2. Controlla la sessione salvata localmente su storage sicuro hardware (Keystore/Keychain)
+      final rawJson = await SecureStorageService().readSecure(_sessionStorageKey);
       if (rawJson != null && rawJson.isNotEmpty) {
         final decoded = jsonDecode(rawJson) as Map<String, dynamic>;
         _currentUser = AppUser.fromJson(decoded);
@@ -87,14 +87,13 @@ class AuthRepository extends ChangeNotifier {
 
   Future<void> _saveSessionToDisk(AppUser? user) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
       if (user != null) {
-        await prefs.setString(_sessionStorageKey, jsonEncode(user.toJson()));
+        await SecureStorageService().writeSecure(_sessionStorageKey, jsonEncode(user.toJson()));
       } else {
-        await prefs.remove(_sessionStorageKey);
+        await SecureStorageService().deleteSecure(_sessionStorageKey);
       }
     } catch (e) {
-      debugPrint('Errore salvataggio sessione disco: $e');
+      debugPrint('Errore salvataggio protetto sessione: $e');
     }
   }
 
@@ -132,9 +131,8 @@ class AuthRepository extends ChangeNotifier {
             userFriendlyMsg = 'Troppi tentativi falliti consecutivi. Attendi qualche minuto prima di riprovare.';
             break;
           case 'network-request-failed':
-            // Se la rete è offline, controlla se sul dispositivo è salvata una sessione valida di questo utente
-            final prefs = await SharedPreferences.getInstance();
-            final rawJson = prefs.getString(_sessionStorageKey);
+            // Se la rete è offline, controlla se su storage protetto è presente una sessione valida di questo utente
+            final rawJson = await SecureStorageService().readSecure(_sessionStorageKey);
             if (rawJson != null && rawJson.isNotEmpty) {
               final decoded = jsonDecode(rawJson) as Map<String, dynamic>;
               if ((decoded['email'] as String?)?.toLowerCase() == email.trim().toLowerCase()) {
@@ -225,16 +223,49 @@ class AuthRepository extends ChangeNotifier {
           password: password,
         );
         await cred.user?.updateDisplayName(displayName);
-      } catch (fbErr) {
-        debugPrint('Firebase Auth signup offline fallback: $fbErr');
+      } on FirebaseAuthException catch (fbErr) {
+        debugPrint('FirebaseAuthException durante registrazione: ${fbErr.code} - ${fbErr.message}');
+        String userMsg = 'Errore durante la registrazione.';
+        switch (fbErr.code) {
+          case 'email-already-in-use':
+            userMsg = 'Un account con questo indirizzo email è già registrato. Accedi con le tue credenziali.';
+            break;
+          case 'weak-password':
+            userMsg = 'La password scelta è troppo debole. Inserisci almeno 6 caratteri alfanumerici.';
+            break;
+          case 'invalid-email':
+            userMsg = 'Il formato dell\'indirizzo email non è valido.';
+            break;
+          case 'operation-not-allowed':
+            userMsg = 'Registrazione con email temporaneamente disabilitata.';
+            break;
+          default:
+            userMsg = fbErr.message ?? 'Impossibile completare la registrazione.';
+        }
+        _errorMessage = userMsg;
+        _isLoading = false;
+        notifyListeners();
+        return false;
+      } catch (err) {
+        _errorMessage = 'Errore imprevisto durante la registrazione: $err';
+        _isLoading = false;
+        notifyListeners();
+        return false;
       }
 
-      final uid = cred?.user?.uid ?? 'user-${email.hashCode.abs()}';
+      if (cred.user == null) {
+        _errorMessage = 'Impossibile creare l\'utente su Firebase Auth.';
+        _isLoading = false;
+        notifyListeners();
+        return false;
+      }
+
+      final uid = cred.user!.uid;
       final salonId = role == UserRole.salon ? 'salon-${uid.substring(0, 6)}' : null;
 
       final newUser = AppUser(
         id: uid,
-        email: email,
+        email: email.trim(),
         displayName: displayName,
         phone: phone,
         role: role,
@@ -278,7 +309,7 @@ class AuthRepository extends ChangeNotifier {
       _currentUser = newUser;
       await _saveSessionToDisk(_currentUser);
       try {
-        final idToken = await cred?.user?.getIdToken();
+        final idToken = await cred.user?.getIdToken();
         await ApiClient().setAuthToken(idToken);
       } catch (_) {}
 
@@ -476,11 +507,78 @@ class AuthRepository extends ChangeNotifier {
       debugPrint('FirebaseAuth signOut: $e');
     }
 
+    try {
+      await _googleSignIn.signOut();
+    } catch (_) {}
+
+    await SecureStorageService().deleteSecure(_sessionStorageKey);
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_sessionStorageKey);
     await ApiClient().clearAuthToken();
 
     _currentUser = null;
     notifyListeners();
+  }
+
+  /// Eliminazione Definitiva Account ("Diritto all'Oblio" - GDPR Art. 17 / Compliance Google & Apple)
+  Future<bool> deleteAccount() async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      final fbUser = FirebaseAuth.instance.currentUser;
+      final uid = fbUser?.uid ?? _currentUser?.id;
+
+      if (uid != null && uid.isNotEmpty) {
+        // 1. Anonimizzazione / eliminazione dati anagrafici dal documento Firestore /users/{uid}
+        try {
+          await FirebaseFirestore.instance.collection('users').doc(uid).delete();
+        } catch (e) {
+          debugPrint('Nota cancellazione /users/$uid: $e');
+        }
+
+        // 2. Se Salone, elimina o disattiva il salone
+        if (_currentUser?.role == UserRole.salon && _currentUser?.salonId != null) {
+          try {
+            await FirebaseFirestore.instance.collection('saloni').doc(_currentUser!.salonId).delete();
+          } catch (e) {
+            debugPrint('Nota cancellazione salone: $e');
+          }
+        }
+
+        // 3. Eliminazione da Firebase Authentication
+        if (fbUser != null) {
+          try {
+            await fbUser.delete();
+          } on FirebaseAuthException catch (authErr) {
+            if (authErr.code == 'requires-recent-login') {
+              _errorMessage = 'Per motivi di sicurezza, effettua nuovamente l\'accesso prima di procedere all\'eliminazione definitiva dell\'account.';
+              _isLoading = false;
+              notifyListeners();
+              return false;
+            }
+            debugPrint('FirebaseAuth delete note: $authErr');
+          }
+        }
+      }
+
+      // 4. Pulizia hardware di tutti i token e preferenze
+      await SecureStorageService().clearAll();
+      await ApiClient().clearAuthToken();
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_sessionStorageKey);
+
+      _currentUser = null;
+      _isLoading = false;
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _errorMessage = 'Errore durante l\'eliminazione dell\'account: $e';
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    }
   }
 }
