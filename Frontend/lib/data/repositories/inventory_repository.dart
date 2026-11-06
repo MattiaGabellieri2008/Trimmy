@@ -3,58 +3,9 @@ import 'package:flutter/foundation.dart';
 import '../models/product_model.dart';
 
 class InventoryRepository extends ChangeNotifier {
-  static final List<ProductModel> defaultInitialProducts = [
-    ProductModel(
-      id: 'prd-shampoo-bio',
-      tenantId: 'salone_default',
-      name: 'Shampoo Ristrutturante Cheratina 250ml',
-      brand: 'Trimmy Care',
-      category: 'RIVENDITA',
-      costPrice: 8.00,
-      retailPrice: 18.50,
-      stockQuantity: 14,
-      minStockThreshold: 5,
-      barcode: '8001234567890',
-    ),
-    ProductModel(
-      id: 'prd-maschera-argan',
-      tenantId: 'salone_default',
-      name: 'Maschera Nutriente Olio di Argan 200ml',
-      brand: 'Trimmy Luxury',
-      category: 'RIVENDITA',
-      costPrice: 10.00,
-      retailPrice: 24.00,
-      stockQuantity: 8,
-      minStockThreshold: 3,
-      barcode: '8001234567891',
-    ),
-    ProductModel(
-      id: 'prd-cera-matte',
-      tenantId: 'salone_default',
-      name: 'Cera Modellante Effetto Matte 100ml',
-      brand: 'Barber Lab',
-      category: 'RIVENDITA',
-      costPrice: 7.00,
-      retailPrice: 16.00,
-      stockQuantity: 12,
-      minStockThreshold: 4,
-      barcode: '8001234567892',
-    ),
-    ProductModel(
-      id: 'prd-olio-barba',
-      tenantId: 'salone_default',
-      name: 'Olio Lucidante Barba & Baffi 50ml',
-      brand: 'Barber Lab',
-      category: 'RIVENDITA',
-      costPrice: 6.50,
-      retailPrice: 15.00,
-      stockQuantity: 6,
-      minStockThreshold: 2,
-      barcode: '8001234567893',
-    ),
-  ];
+  static final List<ProductModel> defaultInitialProducts = [];
 
-  List<ProductModel> _products = List.from(defaultInitialProducts);
+  List<ProductModel> _products = [];
   bool _isLoading = false;
   String? _currentSalonId;
 
@@ -97,24 +48,10 @@ class InventoryRepository extends ChangeNotifier {
           return ProductModel.fromJson(data);
         }).toList();
       } else {
-        // Se non ci sono prodotti registrati, usa i prodotti default e salvali su Firestore
-        _products = List.from(defaultInitialProducts);
-        for (final p in _products) {
-          try {
-            await FirebaseFirestore.instance
-                .collection('saloni')
-                .doc(salonId)
-                .collection('prodotti')
-                .doc(p.id)
-                .set(p.toJson());
-          } catch (_) {}
-        }
+        _products = [];
       }
     } catch (e) {
       debugPrint('Firestore inventory fetch: $e');
-      if (_products.isEmpty) {
-        _products = List.from(defaultInitialProducts);
-      }
     }
 
     _isLoading = false;

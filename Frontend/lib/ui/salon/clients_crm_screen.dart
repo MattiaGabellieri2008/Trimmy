@@ -123,8 +123,8 @@ class _SalonClientsCrmScreenState extends State<SalonClientsCrmScreen> {
           'name': appt.customerName,
           'email': '',
           'phone': appt.customerPhone.isNotEmpty ? appt.customerPhone : '+39 000 000000',
-          'tier': 'Cliente Attivo',
-          'points': 50,
+          'tier': 'Cliente',
+          'points': 0,
           'beautyNotes': 'Prenotato via app Trimmy per ${appt.serviceName}',
           'city': 'Civitanova Marche',
         });

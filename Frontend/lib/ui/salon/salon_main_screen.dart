@@ -58,7 +58,7 @@ class _SalonMainScreenState extends State<SalonMainScreen> {
             BottomNavigationBarItem(
               icon: Icon(Icons.point_of_sale_outlined),
               activeIcon: Icon(Icons.point_of_sale),
-              label: 'Cassa POS',
+              label: 'Cassa',
             ),
             BottomNavigationBarItem(
               icon: Icon(Icons.inventory_2_outlined),

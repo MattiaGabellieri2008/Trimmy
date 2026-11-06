@@ -1,7 +1,9 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/theme_repository.dart';
 import '../../data/repositories/auth_repository.dart';
@@ -116,17 +118,11 @@ class _SalonProfileScreenState extends State<SalonProfileScreen> {
                     children: [
                       ClipRRect(
                         borderRadius: BorderRadius.circular(16),
-                        child: Image.network(
+                        child: _buildSalonImageWidget(
                           salonImageUrl,
                           width: 68,
                           height: 68,
                           fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => Container(
-                            width: 68,
-                            height: 68,
-                            color: AppColors.obsidianBlack,
-                            child: const Icon(Icons.storefront, color: AppColors.gold, size: 32),
-                          ),
                         ),
                       ),
                       const SizedBox(width: 14),
@@ -579,6 +575,50 @@ class _SalonProfileScreenState extends State<SalonProfileScreen> {
     );
   }
 
+  Widget _buildSalonImageWidget(
+    String imageUrl, {
+    double? width,
+    double? height,
+    BoxFit fit = BoxFit.cover,
+  }) {
+    if (imageUrl.startsWith('data:image')) {
+      try {
+        final base64Str = imageUrl.contains(',') ? imageUrl.split(',').last : imageUrl;
+        final bytes = base64Decode(base64Str);
+        return Image.memory(
+          bytes,
+          width: width,
+          height: height,
+          fit: fit,
+          errorBuilder: (_, __, ___) => _imageFallback(width, height),
+        );
+      } catch (_) {
+        return _imageFallback(width, height);
+      }
+    }
+
+    if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
+      return Image.network(
+        imageUrl,
+        width: width,
+        height: height,
+        fit: fit,
+        errorBuilder: (_, __, ___) => _imageFallback(width, height),
+      );
+    }
+
+    return _imageFallback(width, height);
+  }
+
+  Widget _imageFallback(double? width, double? height) {
+    return Container(
+      width: width,
+      height: height,
+      color: AppColors.obsidianBlack,
+      child: const Icon(Icons.storefront, color: AppColors.gold, size: 32),
+    );
+  }
+
   void _showEditSalonModal(
     BuildContext context, {
     required String salonId,
@@ -590,20 +630,31 @@ class _SalonProfileScreenState extends State<SalonProfileScreen> {
     required String initialImageUrl,
   }) {
     final nameCtrl = TextEditingController(text: initialName);
-    final categoryCtrl = TextEditingController(text: initialCategory);
     final addressCtrl = TextEditingController(text: initialAddress);
     final cityCtrl = TextEditingController(text: initialCity);
     final phoneCtrl = TextEditingController(text: initialPhone);
-    final imageCtrl = TextEditingController(text: initialImageUrl);
 
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    final presetImages = [
-      'https://images.unsplash.com/photo-1585747860715-2ba37e788b70?w=600&auto=format&fit=crop&q=80',
-      'https://images.unsplash.com/photo-1503951914875-452162b0f3f1?w=600&auto=format&fit=crop&q=80',
-      'https://images.unsplash.com/photo-1560066984-138dadb4c035?w=600&auto=format&fit=crop&q=80',
-      'https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?w=600&auto=format&fit=crop&q=80',
+    final availableCategories = [
+      'Barber Shop',
+      'Hair Stylist Donna',
+      'Hair Stylist Uomo & Donna',
+      'Barber Shop & Hair Salon',
+      'Centro Estetico',
+      'Unisex',
+      'SPA & Benessere',
+      'Nail Salon & Manicure',
     ];
+
+    if (initialCategory.trim().isNotEmpty && !availableCategories.contains(initialCategory.trim())) {
+      availableCategories.insert(0, initialCategory.trim());
+    }
+
+    String selectedCategory = availableCategories.contains(initialCategory.trim())
+        ? initialCategory.trim()
+        : availableCategories.first;
+
+    String currentImageUrl = initialImageUrl;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     showModalBottomSheet(
       context: context,
@@ -641,59 +692,58 @@ class _SalonProfileScreenState extends State<SalonProfileScreen> {
                     ),
                     const SizedBox(height: 16),
 
-                    // Anteprima Immagine
+                    // Anteprima Immagine e Pulsante Caricamento File da Locale
                     Center(
                       child: Column(
                         children: [
                           ClipRRect(
                             borderRadius: BorderRadius.circular(16),
-                            child: Image.network(
-                              imageCtrl.text,
-                              width: 120,
-                              height: 80,
+                            child: _buildSalonImageWidget(
+                              currentImageUrl,
+                              width: 140,
+                              height: 90,
                               fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) => Container(
-                                width: 120,
-                                height: 80,
-                                color: AppColors.zinc800,
-                                child: const Icon(Icons.broken_image, color: Colors.white54),
-                              ),
                             ),
                           ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Seleziona una foto preimpostata o incolla un URL:',
-                            style: TextStyle(fontSize: 11, color: isDark ? Colors.white60 : AppColors.zinc500),
-                          ),
-                          const SizedBox(height: 6),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: presetImages.map((url) {
-                              final isSelected = imageCtrl.text == url;
-                              return GestureDetector(
-                                onTap: () => setModalState(() => imageCtrl.text = url),
-                                child: Container(
-                                  margin: const EdgeInsets.symmetric(horizontal: 4),
-                                  decoration: BoxDecoration(
-                                    border: Border.all(
-                                      color: isSelected ? AppColors.gold : Colors.transparent,
-                                      width: 2,
-                                    ),
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: ClipRRect(
-                                    borderRadius: BorderRadius.circular(6),
-                                    child: Image.network(url, width: 38, height: 38, fit: BoxFit.cover),
-                                  ),
-                                ),
-                              );
-                            }).toList(),
+                          const SizedBox(height: 10),
+                          OutlinedButton.icon(
+                            onPressed: () async {
+                              try {
+                                final picker = ImagePicker();
+                                final XFile? file = await picker.pickImage(
+                                  source: ImageSource.gallery,
+                                  maxWidth: 800,
+                                  maxHeight: 800,
+                                  imageQuality: 75,
+                                );
+                                if (file != null) {
+                                  final bytes = await file.readAsBytes();
+                                  final base64Image = 'data:image/jpeg;base64,${base64Encode(bytes)}';
+                                  setModalState(() {
+                                    currentImageUrl = base64Image;
+                                  });
+                                }
+                              } catch (e) {
+                                debugPrint('Errore selezione file immagine: $e');
+                              }
+                            },
+                            icon: const Icon(Icons.file_upload_outlined, size: 18),
+                            label: const Text(
+                              'Importa Immagine da Locale',
+                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              side: const BorderSide(color: AppColors.gold, width: 1.5),
+                              foregroundColor: isDark ? AppColors.gold : AppColors.obsidianBlack,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                            ),
                           ),
                         ],
                       ),
                     ),
 
-                    const SizedBox(height: 14),
+                    const SizedBox(height: 16),
 
                     TextField(
                       controller: nameCtrl,
@@ -702,11 +752,26 @@ class _SalonProfileScreenState extends State<SalonProfileScreen> {
                     const SizedBox(height: 10),
 
                     Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Expanded(
-                          child: TextField(
-                            controller: categoryCtrl,
-                            decoration: const InputDecoration(labelText: 'Categoria (es. Barber Shop)'),
+                          child: DropdownButtonFormField<String>(
+                            value: selectedCategory,
+                            decoration: const InputDecoration(
+                              labelText: 'Categoria',
+                            ),
+                            isExpanded: true,
+                            items: availableCategories.map((cat) {
+                              return DropdownMenuItem<String>(
+                                value: cat,
+                                child: Text(cat, style: const TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis),
+                              );
+                            }).toList(),
+                            onChanged: (val) {
+                              if (val != null) {
+                                setModalState(() => selectedCategory = val);
+                              }
+                            },
                           ),
                         ),
                         const SizedBox(width: 10),
@@ -730,13 +795,6 @@ class _SalonProfileScreenState extends State<SalonProfileScreen> {
                       controller: phoneCtrl,
                       decoration: const InputDecoration(labelText: 'Telefono di Contatto / WhatsApp'),
                     ),
-                    const SizedBox(height: 10),
-
-                    TextField(
-                      controller: imageCtrl,
-                      onChanged: (_) => setModalState(() {}),
-                      decoration: const InputDecoration(labelText: 'URL Immagine Profilo Salone'),
-                    ),
 
                     const SizedBox(height: 20),
 
@@ -753,20 +811,20 @@ class _SalonProfileScreenState extends State<SalonProfileScreen> {
                           final ok = await salonRepo.saveSalonProfile(
                             salonId: salonId,
                             name: name,
-                            category: categoryCtrl.text.trim(),
+                            category: selectedCategory,
                             address: addressCtrl.text.trim(),
                             city: cityCtrl.text.trim(),
                             phone: phoneCtrl.text.trim(),
-                            imageUrl: imageCtrl.text.trim(),
+                            imageUrl: currentImageUrl,
                           );
 
                           authRepo.updateSalonData(
                             salonName: name,
-                            category: categoryCtrl.text.trim(),
+                            category: selectedCategory,
                             city: cityCtrl.text.trim(),
                             address: addressCtrl.text.trim(),
                             phone: phoneCtrl.text.trim(),
-                            imageUrl: imageCtrl.text.trim(),
+                            imageUrl: currentImageUrl,
                           );
 
                           if (ctx.mounted) Navigator.pop(ctx);

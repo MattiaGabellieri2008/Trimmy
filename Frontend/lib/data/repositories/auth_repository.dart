@@ -448,20 +448,20 @@ class AuthRepository extends ChangeNotifier {
 
     if (role == UserRole.salon) {
       _currentUser = const AppUser(
-        id: 'demo-salon-1',
-        email: 'atelier.duomo@trimmy.it',
-        displayName: 'Atelier Bellezza Duomo (Titolare)',
-        phone: '+39 02 8847291',
+        id: 'salon-owner-1',
+        email: 'salone@trimmy.it',
+        displayName: 'Titolare Salone',
+        phone: '',
         role: UserRole.salon,
         salonId: 'salon-1',
-        salonName: 'Atelier Bellezza Duomo',
+        salonName: 'Salone Partner Trimmy',
       );
     } else {
       _currentUser = const AppUser(
-        id: 'demo-client-1',
-        email: 'mario.rossi@trimmy.it',
-        displayName: 'Mario Rossi',
-        phone: '+39 340 1234567',
+        id: 'client-user-1',
+        email: 'cliente@trimmy.it',
+        displayName: 'Cliente',
+        phone: '',
         role: UserRole.client,
         salonId: null,
       );

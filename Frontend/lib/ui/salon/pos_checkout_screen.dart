@@ -62,25 +62,23 @@ class _PosCheckoutScreenState extends State<PosCheckoutScreen> {
 
       _operatorName = authRepo.currentUser?.displayName ?? 'Staff Cassa';
 
-      // Se non ci sono voci, carica il primo servizio dal catalogo come default per iniziare subito
-      if (_cartItems.isEmpty) {
+      // Carica la voce solo se passata esplicitamente da una prenotazione in agenda
+      if (_cartItems.isEmpty && widget.initialServiceId != null) {
         final services = context.read<SalonRepository>().services;
         if (services.isNotEmpty) {
-          SalonService initialService = services.first;
-          if (widget.initialServiceId != null) {
-            final found = services.where((s) => s.id == widget.initialServiceId).firstOrNull;
-            if (found != null) initialService = found;
+          final found = services.where((s) => s.id == widget.initialServiceId).firstOrNull;
+          if (found != null) {
+            setState(() {
+              _cartItems.add(ReceiptItem(
+                id: found.id,
+                type: 'SERVICE',
+                name: found.name,
+                price: found.price,
+                quantity: 1,
+                operatorName: _operatorName,
+              ));
+            });
           }
-          setState(() {
-            _cartItems.add(ReceiptItem(
-              id: initialService.id,
-              type: 'SERVICE',
-              name: initialService.name,
-              price: initialService.price,
-              quantity: 1,
-              operatorName: _operatorName,
-            ));
-          });
         }
       }
     });
@@ -103,23 +101,46 @@ class _PosCheckoutScreenState extends State<PosCheckoutScreen> {
     final activeCarnets = fidelityRepo.clientPackages.where((p) => p.isActive).toList();
     final authRepo = context.watch<AuthRepository>();
     final salonName = authRepo.currentUser?.salonName ?? 'Trimmy Salone';
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor: AppColors.zinc50,
+      backgroundColor: isDark ? const Color(0xFF121212) : AppColors.zinc50,
       appBar: AppBar(
-        title: const Text('Punto Cassa POS', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-        backgroundColor: AppColors.white,
+        title: Text(
+          'Cassa',
+          style: TextStyle(
+            color: isDark ? Colors.white : AppColors.zinc900,
+            fontWeight: FontWeight.bold,
+            fontSize: 18,
+          ),
+        ),
+        backgroundColor: isDark ? const Color(0xFF1E1E1E) : AppColors.white,
         elevation: 0,
         actions: [
-          // 1. Tasto Storico Scontrini di oggi
-          IconButton(
-            tooltip: 'Storico Scontrini Oggi',
-            icon: const Icon(Icons.receipt_long, color: AppColors.zinc800),
-            onPressed: () => _showTodayReceiptsModal(),
+          // 1. Tasto Storico Scontrini di oggi (Pillola elegante)
+          Padding(
+            padding: const EdgeInsets.only(right: 6),
+            child: TextButton.icon(
+              onPressed: () => _showTodayReceiptsModal(),
+              icon: Icon(Icons.receipt_long, size: 16, color: isDark ? Colors.white : AppColors.obsidianBlack),
+              label: Text(
+                'Storico',
+                style: TextStyle(
+                  color: isDark ? Colors.white : AppColors.obsidianBlack,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                ),
+              ),
+              style: TextButton.styleFrom(
+                backgroundColor: isDark ? const Color(0xFF2A2A2A) : AppColors.zinc100,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              ),
+            ),
           ),
           // 2. Tasto Rapido Chiusura Fiscale Cassa (Report Z)
           Padding(
-            padding: const EdgeInsets.only(right: 8),
+            padding: const EdgeInsets.only(right: 12),
             child: TextButton.icon(
               onPressed: () {
                 DailyCashClosingModal.show(
@@ -128,10 +149,17 @@ class _PosCheckoutScreenState extends State<PosCheckoutScreen> {
                   date: DateTime.now(),
                 );
               },
-              icon: const Icon(Icons.lock_clock, size: 16, color: AppColors.obsidianBlack),
-              label: const Text('Chiusura Z', style: TextStyle(color: AppColors.obsidianBlack, fontWeight: FontWeight.bold, fontSize: 12)),
+              icon: Icon(Icons.lock_clock, size: 16, color: isDark ? Colors.white : AppColors.obsidianBlack),
+              label: Text(
+                'Chiusura Z',
+                style: TextStyle(
+                  color: isDark ? Colors.white : AppColors.obsidianBlack,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                ),
+              ),
               style: TextButton.styleFrom(
-                backgroundColor: AppColors.zinc100,
+                backgroundColor: isDark ? const Color(0xFF2A2A2A) : AppColors.zinc100,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               ),
@@ -1572,8 +1600,8 @@ class _ClientSelectorSheetState extends State<_ClientSelectorSheet> {
               'uid': appt.customerId.isNotEmpty ? appt.customerId : 'c-',
               'displayName': appt.customerName,
               'phone': appt.customerPhone,
-              'fidelityPoints': 50,
-              'vipTier': 'Cliente Attivo',
+              'fidelityPoints': 0,
+              'vipTier': 'Cliente',
             });
           }
         }
